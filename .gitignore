@@ -1,0 +1,11 @@
+*.json
+*.hist
+*.hist.Z
+*.txt
+*.zip
+cmdcodes*
+datacodes*
+hold_client_table.txt*.zip
+h2j/
+.ipynb_checkpoints/
+*.ipynb
