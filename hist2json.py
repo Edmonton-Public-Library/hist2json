@@ -328,7 +328,7 @@ def main(argv):
             else:
                 is_compressed_hist = False
                 # The output JSON file is the same as the history log with '.hist' replaced with '.json'.
-                json_file = f"{Path(hist_log_file)}"
+                json_file = f"{Path(hist_log_file).with_suffix('')}"
             json_file = f"{json_file}.json"
         elif opt in "-h":
             usage()
