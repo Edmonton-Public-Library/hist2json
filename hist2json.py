@@ -28,6 +28,7 @@ import json
 from datetime import datetime
 import gzip
 import socket
+from os.path import exists
 # TODO: Add switch to over-ride client type table.
 # There are 3 tasks: 
 # 1) Parse and load cmd codes and data codes into dictionaries.
@@ -54,7 +55,7 @@ HIST_DIR   = '/software/EDPL/Unicorn/Logs/Hist'
 APP        = 'h2j'
 NEVER      = '2040-01-01'  # Some date in the far future.
 HOSTNAME   = socket.gethostname()
-VERSION    = "1.02.00" # Added hostname detection for data and cmd code files.
+VERSION    = "1.03.00" # Added hostname detection for data and cmd code files.
 HOLD_CLIENT_TABLE = {
     '0': 'CLIENT_UNKNOWN',
     '1': 'CLIENT_WEBCAT',
@@ -112,6 +113,9 @@ def usage():
        If the script is running on the ILS this switch is optional.
     -H --HistFile="/foo/bar.hist": REQUIRED. Path of the history log 
        file to convert.
+    -I --ItemKeyBarcodes="/foo/bar/items.lst": Optional. Path to the 
+       list of all item key / barcodes in 'c_key|call_seq|copy_num|item_id'
+       form. Use 'selitem -oIB'.
     -h: Prints this help message.
     -m: Output as MongoDB JSON (each record as a separate object).
     -v: Turns on verbose messaging which reports data code errors. 
@@ -187,7 +191,22 @@ def _clean_string_(s:str,spc_to_underscore=False):
         s = s.replace(' ', '_').lower()
     return s
 
-def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, verbose=False):
+def _lookup_item_id_(item_key:str, item_key_barcodes:dict) -> str:
+    # Given an item id as: f"{_item_key_}|" or '12345|55|1|' get the item id '31221012345678'
+    """ 
+    >>> i = {}
+    >>> add_itemkey_barcode('12345|55|1|31221012345678', i)
+    1
+    >>> _lookup_item_id_('12345|55|1|', i)
+    '31221012345678'
+    >>> _lookup_item_id_('11111|55|1|', i)
+    >>> _lookup_item_id_('', i)
+    """
+    if item_key_barcodes:
+        if item_key in item_key_barcodes.keys():
+            return item_key_barcodes[item_key]
+
+def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, verbose=False, item_key_barcodes:dict={}):
     """
     >>> c = {}
     >>> count = add_to_dictionary('IY|Cancel Hold-bob|', c, False)
@@ -198,13 +217,27 @@ def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, v
     >>> data = 'E202301180024493003R ^S59IYFWCLOUDLIBRARY^FEEPLMNA^FGEPLHVY^FFEPLCPL^O'.strip().split('^')
     >>> print(get_log_entry(data,c,d,1))
     (0, {'timestamp': '2023-01-18 00:24:49', 'command_code': 'Cancel Hold-bob', 'station_library': 'MNA', 'library': 'HVY', 'library_station': 'CPL'})
+    >>> count = add_to_dictionary('hE|Transit Item|', c, False)
+    >>> count = add_to_dictionary('tJ|Catalog Key Number|', d, True)
+    >>> count = add_to_dictionary('tL|Call Sequence Code|', d, True)
+    >>> count = add_to_dictionary('IS|Copy Number|', d, True)
+    >>> i = {}
+    >>> add_itemkey_barcode('2371230|55|1|31221012345678   |', i)
+    1
+    >>> data = 'E202303231010243024R ^S00hEFWCALCIRC^FFCIRC^FEEPLCAL^FcNONE^dC19^tJ2371230^tL55^IS1^HH41224719^nuEPLRIV^nxHOLD^nrY^Fv2147483647^^O'.strip().split('^')
+    >>> print(get_log_entry(data,c,d,1,item_key_barcodes=i))
+    (7, {'timestamp': '2023-03-23 10:10:24', 'command_code': 'Transit Item', 'library_station': 'C', 'station_library': 'CAL', 'catalog_key_number': '2371230', 'call_sequence_code': '55', 'item_id': '31221012345678'})
     """
+    # E202303231010243024R ^S00hEFWCALCIRC^FFCIRC^FEEPLCAL^FcNONE^dC19^**tJ2371230**^**tL55**^**IS1**^**HH41224719**^nuEPLRIV^nxHOLD^nrY^Fv2147483647^^O
+    # Where the following fields are                                       cat_key     seq_no   copy_no   hold_key  
     record = {}
     record['timestamp'] = to_date(data[0][1:15])  # 'E202301180024483003R' => '20230118002448'
     # convert command code.
     cmd = data[1][3:5]
     err_count = 0
     record['command_code'] = command_codes[cmd]
+    # Capture 'hE' transit item data codes for cat key, call seq, and copy number. 
+    item_key = []
     # Convert all data codes, or report those that are not defined.
     for field in data[2:]:
         dc = field.strip()[0:2]
@@ -222,6 +255,21 @@ def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, v
             # Add fake user pin.
             elif re.match(r'user_pin', data_code):
                 value = 'xxxxx'
+            # Capture 'tJ' - catalog_key_number
+            elif re.match(r'catalog_key_number', data_code):
+                item_key.insert(0, value)
+            # Capture 'tL' - call_sequence_code
+            elif re.match(r'call_sequence_code', data_code):
+                item_key.append(value)
+            # Capture 'IS' - copy_number but only if catalog_key_number and call_sequence_code were found.
+            elif re.match(r'copy_number', data_code):
+                if item_key:
+                    item_key.append(value)
+                    _item_key_ = '|'.join(item_key)
+                    barcode = _lookup_item_id_(f"{_item_key_}|", item_key_barcodes)
+                    if barcode:
+                        data_code = "item_id"
+                        value = barcode
             # Get rid of this tags leading '|a' in customer in this specific data code.
             elif re.match(r'entry_or_tag_data', data_code):
                 value = value[2:]
@@ -244,6 +292,24 @@ def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, v
                 print(f"*   '{dc}' is an unrecognized data code and will be recorded as 'data_code_{dc}': '{field[2:]}'.")
     return (err_count, record)
 
+def add_itemkey_barcode(line:str, dictionary:dict):
+    """
+    >>> i = {}
+    >>> add_itemkey_barcode('12345|55|1|31221012345678', i)
+    1
+    >>> print(f"{i}")
+    {'12345|55|1|': '31221012345678'}
+    """
+    # Input line should look like '12345|55|1|31221012345678|' Straight from selitem -oIB
+    ck_cs_cn_bc = line.split('|')
+    if len(ck_cs_cn_bc) < 4:
+        return 0
+    # clean the definition of special characters.
+    item_key = f"{ck_cs_cn_bc[0]}|{ck_cs_cn_bc[1]}|{ck_cs_cn_bc[2]}|"
+    item_id = ck_cs_cn_bc[3].rstrip()
+    dictionary[item_key] = item_id
+    return 1
+
 def add_to_dictionary(line:str, dictionary:dict, is_data_code=True):
     """
     >>> c={}
@@ -257,7 +323,6 @@ def add_to_dictionary(line:str, dictionary:dict, is_data_code=True):
     >>> print(f"{c}")
     {'cw': 'at.hs_z39'}
     """
-    count = 0
     cmd_array = line.split('|')
     # clean the definition of special characters.
     command = cmd_array[0]
@@ -265,8 +330,7 @@ def add_to_dictionary(line:str, dictionary:dict, is_data_code=True):
     # Remove any weird characters. This should cover it, they're pretty clean.
     definition = _clean_string_(definition, is_data_code)
     dictionary[command] = definition
-    count += 1
-    return count
+    return 1
 
 #  Take valid command line arguments.
 def main(argv):
@@ -280,13 +344,17 @@ def main(argv):
     data_codes= {}
     c_count = 0
     d_count = 0
+    # Dictionary of item keys (key) and item barcodes (value)
+    item_key_barcodes = {}
+    i_count = 0
     is_compressed_hist = False
     # Where all the history data will be stored.
     hist_log = []
     data_codes_file = ''
     cmd_codes_file = ''
+    bar_code_file = ''
     try:
-        opts, args = getopt.getopt(argv, "c:C:D:H:hmv", ["hold_client=", "CmdCodes=", "DataCodes=", "HistFile="])
+        opts, args = getopt.getopt(argv, "c:C:D:H:hI:mv", ["hold_client=", "CmdCodes=", "DataCodes=", "HistFile=", "ItemKeyBarcodes="])
     except getopt.GetoptError:
         usage()
     for opt, arg in opts:
@@ -330,6 +398,12 @@ def main(argv):
                 # The output JSON file is the same as the history log with '.hist' replaced with '.json'.
                 json_file = f"{Path(hist_log_file).with_suffix('')}"
             json_file = f"{json_file}.json"
+        if opt in ("-I", "--ItemKeyBarcodes"):
+            assert isinstance(arg, str)
+            if exists(arg) == False:
+                sys.stderr.write(f"**error, no such file {arg}.\n")
+                sys.exit()
+            bar_code_file = arg
         elif opt in "-h":
             usage()
         elif opt in "-m":
@@ -366,6 +440,11 @@ def main(argv):
         for line in f:
             c_count += add_to_dictionary(line, cmd_codes, False)
     f.close()
+    # Load the item id barcode dictionary which is optional. 
+    with open(bar_code_file, encoding='utf-8') as f:
+        for line in f:
+            i_count += add_itemkey_barcode(line, item_key_barcodes)
+    f.close()
     ## Process the history log into JSON.
     # Open the json file ready for output.
     j = open(json_file, 'w', encoding='utf8')
@@ -381,7 +460,7 @@ def main(argv):
     for line in f:
         line_no += 1
         fields = line.strip().split('^')
-        (errors, record) = get_log_entry(fields, cmd_codes, data_codes, line_no, is_verbose)
+        (errors, record) = get_log_entry(fields, cmd_codes, data_codes, line_no, is_verbose, item_key_barcodes=item_key_barcodes)
         missing_data_codes += errors
         # Append to list if output JSON proper
         if is_mongo_json == False:
@@ -393,6 +472,8 @@ def main(argv):
     j.close()
     # Output report.
     print(f"Total cmd codes read:    {c_count}\nTotal data codes read:   {d_count}\nTotal history records:   {line_no}")
+    if item_key_barcodes:
+        print(f"Total items read:     {i_count}")
     explain = ''
     if missing_data_codes > 0:
         explain = f", (any missing codes have been recorded as 'data_code_[data code value]':'[read value]')"
