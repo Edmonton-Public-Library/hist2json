@@ -55,7 +55,7 @@ HIST_DIR   = '/software/EDPL/Unicorn/Logs/Hist'
 APP        = 'h2j'
 NEVER      = '2040-01-01'  # Some date in the far future.
 HOSTNAME   = socket.gethostname()
-VERSION    = "1.03.00" # Added hostname detection for data and cmd code files.
+VERSION    = "1.03.01" # Added hostname detection for data and cmd code files.
 HOLD_CLIENT_TABLE = {
     '0': 'CLIENT_UNKNOWN',
     '1': 'CLIENT_WEBCAT',
