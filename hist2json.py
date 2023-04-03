@@ -29,6 +29,7 @@ from datetime import datetime
 import gzip
 import socket
 from os.path import exists
+import subprocess
 # TODO: Add switch to over-ride client type table.
 # There are 3 tasks: 
 # 1) Parse and load cmd codes and data codes into dictionaries.
@@ -51,11 +52,12 @@ TEST_MODE  = False
 ILS_NAME   = 'edpl.sirsidynix.net'
 ILS_CC_PATH= '/software/EDPL/Unicorn/Custom/cmdcode'
 ILS_DC_PATH= '/software/EDPL/Unicorn/Custom/datacode'
+TRANSLATE  = '/software/EDPL/Unicorn/Bin/translate'
 HIST_DIR   = '/software/EDPL/Unicorn/Logs/Hist'
 APP        = 'h2j'
 NEVER      = '2040-01-01'  # Some date in the far future.
 HOSTNAME   = socket.gethostname()
-VERSION    = "1.03.01" # Added hostname detection for data and cmd code files.
+VERSION    = "1.04.00" # Added hostname detection for data and cmd code files.
 HOLD_CLIENT_TABLE = {
     '0': 'CLIENT_UNKNOWN',
     '1': 'CLIENT_WEBCAT',
@@ -92,7 +94,8 @@ def usage():
     If the script is running on the ILS you do not need to use the 
     '-D' or '-C' switches (see below). The system cmdcode and datacode
     files will be used. Make sure ILS_NAME is set correctly for your
-    ILS, currently it's '{ILS_NAME}'.
+    ILS, currently it's '{ILS_NAME}', and make sure 'TRANSLATE' is
+    set properly. Currently: '{TRANSLATE}'
 
     The script will automatically handle log file compression if required.
 
@@ -310,6 +313,41 @@ def add_itemkey_barcode(line:str, dictionary:dict):
     dictionary[item_key] = item_id
     return 1
 
+# Create a temp file for the code file and open it for writing. 
+# Open cat process. 
+# Open translate subprocess. 
+# Write results to file. 
+# Return the temp file name.
+# Requirement: the script must be running on the ILS.
+# return: translated file name.
+def translate(codeFile:str, is_data_code=True) ->str:
+    if not codeFile or not exists(codeFile):
+        sys.stderr.write(f"*error, can't find code file '{codeFile}' required for translation.")
+        sys.exit()
+    if not exists(TRANSLATE):
+        sys.stderr.write(f"*error, can't find 'translate' app '{TRANSLATE}' required for translation.")
+        sys.exit()
+    # Test for the translate application on this server (ILS) 
+    # Create a temp file for the code file and open it for writing. 
+    translated_file = ''
+    if is_data_code:
+        translated_file = 'data_codes.tranlated'
+    else:
+        translated_file = 'cmd_codes.tranlated'
+
+    # Create the pipeline
+    cat_process = subprocess.Popen(["cat", f"{codeFile}"], stdout=subprocess.PIPE)
+    translate_process = subprocess.Popen([f"{TRANSLATE}"], stdin=cat_process.stdout, stdout=subprocess.PIPE)
+
+    # Get the output
+    output = translate_process.communicate()[0]
+
+    with open(translated_file, encoding='utf-8', mode='w') as t:
+        t.writelines(output.decode())
+    t.close()
+    return translated_file
+
+
 def add_to_dictionary(line:str, dictionary:dict, is_data_code=True):
     """
     >>> c={}
@@ -353,6 +391,8 @@ def main(argv):
     data_codes_file = ''
     cmd_codes_file = ''
     bar_code_file = ''
+    # Translate command codes and data codes if required, and iff translate available.
+    is_translation_required = False
     try:
         opts, args = getopt.getopt(argv, "c:C:D:H:hI:mv", ["hold_client=", "CmdCodes=", "DataCodes=", "HistFile=", "ItemKeyBarcodes="])
     except getopt.GetoptError:
@@ -413,13 +453,13 @@ def main(argv):
     # Can be empty because they aren't required if the script is running on the ILS.
     if data_codes_file == '':
         if HOSTNAME == ILS_NAME:
-            data_codes_file = ILS_DC_PATH
+            data_codes_file = translate(ILS_DC_PATH, is_data_code=True)
         else:
             print(f"*error, '-D' requires a valid data code file name except if run on the ILS.")
             sys.exit()
     if cmd_codes_file == '':
         if HOSTNAME == ILS_NAME:
-            cmd_codes_file = ILS_CC_PATH
+            cmd_codes_file = translate(ILS_CC_PATH, is_data_code=False)
         else:
             print(f"*error, '-C' requires a valid cmd code file name except if run on the ILS.")
             sys.exit()
