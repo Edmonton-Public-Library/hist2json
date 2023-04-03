@@ -279,7 +279,7 @@ def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, v
                     value = temp
                 except KeyError:
                     err_count += 1
-                    print(f"* warning on line {line_no}:\n*   missing hold client type: {value}")
+                    sys.stderr.write(f"* warning on line {line_no}:\n*   missing hold client type: {value}\n")
             record[data_code] = value
         except KeyError:
             err_count += 1
@@ -288,7 +288,7 @@ def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, v
             data_codes[dc] = data_code
             if verbose == True:
                 if err_count == 1:
-                    print(f"* warning on line {line_no}:\n*   {data}")
+                    sys.stderr.write(f"* warning on line {line_no}:\n*   {data}\n")
                 print(f"*   '{dc}' is an unrecognized data code and will be recorded as 'data_code_{dc}': '{field[2:]}'.")
     return (err_count, record)
 
@@ -441,10 +441,16 @@ def main(argv):
             c_count += add_to_dictionary(line, cmd_codes, False)
     f.close()
     # Load the item id barcode dictionary which is optional. 
-    with open(bar_code_file, encoding='utf-8') as f:
-        for line in f:
-            i_count += add_itemkey_barcode(line, item_key_barcodes)
-    f.close()
+    if bar_code_file:
+        try:
+            with open(bar_code_file, encoding='utf-8') as f:
+                for line in f:
+                    i_count += add_itemkey_barcode(line, item_key_barcodes)
+            f.close()
+        except:
+            sys.stderr.write(f"**error while reading '{bar_code_file}': {fe}\n")
+    else:
+        sys.stderr.write(f"Hint: use the -I switch to translate item keys to item IDs.\n")
     ## Process the history log into JSON.
     # Open the json file ready for output.
     j = open(json_file, 'w', encoding='utf8')
