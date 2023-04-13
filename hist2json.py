@@ -59,7 +59,7 @@ APP        = 'h2j'
 # A replacement date Symphony's deep time 'NEVER' which won't do as a timestamp.
 NEVER      = '2040-01-01'
 HOSTNAME   = socket.gethostname()
-VERSION    = "1.04.00" # Added hostname detection for data and cmd code files.
+VERSION    = "1.04.02" # Added hostname detection for data and cmd code files.
 HOLD_CLIENT_TABLE = {
     '0': 'CLIENT_UNKNOWN',
     '1': 'CLIENT_WEBCAT',
@@ -353,7 +353,7 @@ def translate(codeFile:str, is_data_code=True) ->str:
     # Get the output
     output = translate_process.communicate()[0]
 
-    with open(translated_file, encoding='ISO-8859-1', mode='w') as t:
+    with open(translated_file, mode='w', encoding='ISO-8859-1') as t:
         t.writelines(output.decode())
     t.close()
     return translated_file
@@ -415,7 +415,7 @@ def main(argv):
                 sys.stderr.write(f"**error, no such file {arg}.\n")
                 sys.exit()
             try:
-                with open(arg, 'r') as j:
+                with open(arg, mode='r') as j:
                     HOLD_CLIENT_TABLE = json.load(j)
             except:
                 sys.stderr.write(f"**error while reading JSON from {arg}.\n")
@@ -476,7 +476,7 @@ def main(argv):
             sys.exit()
     ## Load Codes and Definitions
     # data codes
-    with open(data_codes_file, encoding='ISO-8859-1') as f:
+    with open(data_codes_file, mode='r', encoding='ISO-8859-1') as f:
         for line in f:
             d_count += add_to_dictionary(line, data_codes, True)
     f.close()
@@ -487,14 +487,14 @@ def main(argv):
     data_codes['uU'] = "user_prefered_name"
     data_codes['P7'] = "circ_rule"
     # Load Cmd Codes
-    with open(cmd_codes_file, encoding='ISO-8859-1') as f:
+    with open(cmd_codes_file, mode='r', encoding='ISO-8859-1') as f:
         for line in f:
             c_count += add_to_dictionary(line, cmd_codes, False)
     f.close()
     # Load the item id barcode dictionary which is optional. 
     if bar_code_file:
         try:
-            with open(bar_code_file, encoding='ISO-8859-1') as f:
+            with open(bar_code_file, mode='r', encoding='ISO-8859-1') as f:
                 for line in f:
                     i_count += add_itemkey_barcode(line, item_key_barcodes)
             f.close()
@@ -504,13 +504,13 @@ def main(argv):
         sys.stderr.write(f"Hint: use the -I switch to translate item keys to item IDs.\n")
     ## Process the history log into JSON.
     # Open the json file ready for output.
-    j = open(json_file, 'w', encoding='ISO-8859-1')
+    j = open(json_file, mode='w', encoding='ISO-8859-1')
     # History file handle; either gzipped or regular text.
     f = ''
     if is_compressed_hist == True:
-        f = gzip.open(hist_log_file, 'rt', encoding='ISO-8859-1')
+        f = gzip.open(hist_log_file, mode='rt', encoding='ISO-8859-1')
     else: # Not a zipped history file
-        f = open(hist_log_file, encoding='ISO-8859-1')
+        f = open(hist_log_file, mode='r', encoding='ISO-8859-1')
     # Process each of the lines.
     line_no = 0
     missing_data_codes = 0
