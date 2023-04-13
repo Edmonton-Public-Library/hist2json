@@ -508,7 +508,7 @@ def main(argv):
     # History file handle; either gzipped or regular text.
     f = ''
     if is_compressed_hist == True:
-        f = gzip.open(hist_log_file, 'rt')
+        f = gzip.open(hist_log_file, 'rt', encoding='ISO-8859-1')
     else: # Not a zipped history file
         f = open(hist_log_file, encoding='ISO-8859-1')
     # Process each of the lines.
