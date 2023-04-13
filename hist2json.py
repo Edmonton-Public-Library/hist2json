@@ -50,12 +50,14 @@ import subprocess
 # Turning this to True will run all doctests.
 TEST_MODE  = False
 ILS_NAME   = 'edpl.sirsidynix.net'
-ILS_CC_PATH= '/software/EDPL/Unicorn/Custom/cmdcode'
-ILS_DC_PATH= '/software/EDPL/Unicorn/Custom/datacode'
-TRANSLATE  = '/software/EDPL/Unicorn/Bin/translate'
-HIST_DIR   = '/software/EDPL/Unicorn/Logs/Hist'
+HOME       = f"/software/EDPL"
+ILS_CC_PATH= f"{HOME}/Unicorn/Custom/cmdcode"
+ILS_DC_PATH= f"{HOME}/Unicorn/Custom/datacode"
+TRANSLATE  = f"{HOME}/Unicorn/Bin/translate"
+HIST_DIR   = f"{HOME}/Unicorn/Logs/Hist"
 APP        = 'h2j'
-NEVER      = '2040-01-01'  # Some date in the far future.
+# A replacement date Symphony's deep time 'NEVER' which won't do as a timestamp.
+NEVER      = '2040-01-01'
 HOSTNAME   = socket.gethostname()
 VERSION    = "1.04.00" # Added hostname detection for data and cmd code files.
 HOLD_CLIENT_TABLE = {
@@ -132,7 +134,9 @@ def usage():
     sys.stderr.write(usage_text)
     sys.exit()
 
-# Converts the many types of date strings stored in History logs into 'yyyy-mm-dd' database-ready format.
+# Converts the many types of date strings stored in History logs into 'yyyy-mm-dd' database-ready format. 
+# param: data string which may or may not contain a date string. 
+# return: the date converted to timestamp, or '1900-01-01' if a date can't be parsed from the string.
 def to_date(data:str):
     """
     >>> to_date('01/13/2023')
@@ -183,7 +187,10 @@ def to_date(data:str):
             return "1900-01-01"
         return '-'.join(new_date)
 
-
+# Cleans a standard set of special characters from a string. 
+# param: string to clean. 
+# param: spc_to_underscore as boolean, True will remove all special characters 
+#   and replace any spaces with underscores.
 def _clean_string_(s:str,spc_to_underscore=False):
     # Remove any weird characters. This should cover it, they're pretty clean.
     for ch in ['\\','/','`','*','_','{','}','[',']','(',')','<','>','!','$',',','\'']:
@@ -194,6 +201,10 @@ def _clean_string_(s:str,spc_to_underscore=False):
         s = s.replace(' ', '_').lower()
     return s
 
+# Given an item key will lookup the associated barcode. 
+# param: item key. Pipe seperated cat key, call sequence, item copy. 
+# param: dictionary of item keys, and barcode values. 
+# return: barcode or None if lookup fails.
 def _lookup_item_id_(item_key:str, item_key_barcodes:dict) -> str:
     # Given an item id as: f"{_item_key_}|" or '12345|55|1|' get the item id '31221012345678'
     """ 
@@ -313,12 +324,12 @@ def add_itemkey_barcode(line:str, dictionary:dict):
     dictionary[item_key] = item_id
     return 1
 
-# Create a temp file for the code file and open it for writing. 
-# Open cat process. 
-# Open translate subprocess. 
-# Write results to file. 
-# Return the temp file name.
+# Uses the Symphony translate command to translate the command and data code files. 
+# Translation will run automatically if the following conditions are met; the script is running
+# on the ILS, and the '-D' and / or the '-C' flag(s) were not selected. 
 # Requirement: the script must be running on the ILS.
+# param: code file string, either the command or data code path. 
+# param: is_data_code boolean, True the file is the data code file, False for command code file. .
 # return: translated file name.
 def translate(codeFile:str, is_data_code=True) ->str:
     if not codeFile or not exists(codeFile):
@@ -342,7 +353,7 @@ def translate(codeFile:str, is_data_code=True) ->str:
     # Get the output
     output = translate_process.communicate()[0]
 
-    with open(translated_file, encoding='utf-8', mode='w') as t:
+    with open(translated_file, encoding='ISO-8859-1', mode='w') as t:
         t.writelines(output.decode())
     t.close()
     return translated_file
@@ -465,7 +476,7 @@ def main(argv):
             sys.exit()
     ## Load Codes and Definitions
     # data codes
-    with open(data_codes_file, encoding='utf8') as f:
+    with open(data_codes_file, encoding='ISO-8859-1') as f:
         for line in f:
             d_count += add_to_dictionary(line, data_codes, True)
     f.close()
@@ -476,14 +487,14 @@ def main(argv):
     data_codes['uU'] = "user_prefered_name"
     data_codes['P7'] = "circ_rule"
     # Load Cmd Codes
-    with open(cmd_codes_file, encoding='utf8') as f:
+    with open(cmd_codes_file, encoding='ISO-8859-1') as f:
         for line in f:
             c_count += add_to_dictionary(line, cmd_codes, False)
     f.close()
     # Load the item id barcode dictionary which is optional. 
     if bar_code_file:
         try:
-            with open(bar_code_file, encoding='utf-8') as f:
+            with open(bar_code_file, encoding='ISO-8859-1') as f:
                 for line in f:
                     i_count += add_itemkey_barcode(line, item_key_barcodes)
             f.close()
@@ -493,13 +504,13 @@ def main(argv):
         sys.stderr.write(f"Hint: use the -I switch to translate item keys to item IDs.\n")
     ## Process the history log into JSON.
     # Open the json file ready for output.
-    j = open(json_file, 'w', encoding='utf8')
+    j = open(json_file, 'w', encoding='ISO-8859-1')
     # History file handle; either gzipped or regular text.
     f = ''
     if is_compressed_hist == True:
         f = gzip.open(hist_log_file, 'rt')
     else: # Not a zipped history file
-        f = open(hist_log_file, encoding='utf8')
+        f = open(hist_log_file, encoding='ISO-8859-1')
     # Process each of the lines.
     line_no = 0
     missing_data_codes = 0
