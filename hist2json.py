@@ -45,10 +45,12 @@ import subprocess
 # E202301180001313066R ^S32IYFWOVERDRIVE^FEEPLMNA^FFSIPCHK^FcNONE^FDSIPCHK^dC6^UO21221013616708^UK1/18/2023^OAY^^O
 # E202301180001403066R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLWHP^UO21221027661047^UfIlovebigb00ks^NQ31221108836540^HB01/18/2024^HKTITLE^HOEPLLHL^dC5^^O00121
 # 
+# Added hostname detection for data and cmd code files.
+VERSION    = "1.04.03"
 # When reading data codes and command codes, assume the default location on the ILS,
 # otherwise the user must enter the path on the command line. -d = datacodes, -c commandcodes.
 # Turning this to True will run all doctests.
-TEST_MODE  = False
+TEST_MODE  = True
 ILS_NAME   = 'edpl.sirsidynix.net'
 HOME       = f"/software/EDPL"
 ILS_CC_PATH= f"{HOME}/Unicorn/Custom/cmdcode"
@@ -59,7 +61,7 @@ APP        = 'h2j'
 # A replacement date Symphony's deep time 'NEVER' which won't do as a timestamp.
 NEVER      = '2040-01-01'
 HOSTNAME   = socket.gethostname()
-VERSION    = "1.04.02" # Added hostname detection for data and cmd code files.
+
 HOLD_CLIENT_TABLE = {
     '0': 'CLIENT_UNKNOWN',
     '1': 'CLIENT_WEBCAT',
@@ -137,19 +139,7 @@ def usage():
 # Converts the many types of date strings stored in History logs into 'yyyy-mm-dd' database-ready format. 
 # param: data string which may or may not contain a date string. 
 # return: the date converted to timestamp, or '1900-01-01' if a date can't be parsed from the string.
-def to_date(data:str):
-    """
-    >>> to_date('01/13/2023')
-    '2023-01-13'
-    >>> to_date('E202301180024483003R ')
-    '2023-01-18 00:24:48'
-    >>> to_date('1/3/2023')
-    '2023-01-03'
-    >>> to_date('20230118002448')
-    '2023-01-18 00:24:48'
-    >>> to_date('01/13/2023,5:33 PM')
-    '2023-01-13'
-    """
+def to_date(data:str) -> str:
     # And some dates have 1/18/2023,5:40 (sigh)
     # And some dates have 'E202301180024483003R '
     my_date = data.split(',')[0]
@@ -191,7 +181,7 @@ def to_date(data:str):
 # param: string to clean. 
 # param: spc_to_underscore as boolean, True will remove all special characters 
 #   and replace any spaces with underscores.
-def _clean_string_(s:str,spc_to_underscore=False):
+def clean_string(s:str, spc_to_underscore=False) -> str:
     # Remove any weird characters. This should cover it, they're pretty clean.
     for ch in ['\\','/','`','*','_','{','}','[',']','(',')','<','>','!','$',',','\'']:
         if ch in s:
@@ -205,43 +195,13 @@ def _clean_string_(s:str,spc_to_underscore=False):
 # param: item key. Pipe seperated cat key, call sequence, item copy. 
 # param: dictionary of item keys, and barcode values. 
 # return: barcode or None if lookup fails.
-def _lookup_item_id_(item_key:str, item_key_barcodes:dict) -> str:
+def lookup_item_id(item_key:str, item_key_barcodes:dict) -> str:
     # Given an item id as: f"{_item_key_}|" or '12345|55|1|' get the item id '31221012345678'
-    """ 
-    >>> i = {}
-    >>> add_itemkey_barcode('12345|55|1|31221012345678', i)
-    1
-    >>> _lookup_item_id_('12345|55|1|', i)
-    '31221012345678'
-    >>> _lookup_item_id_('11111|55|1|', i)
-    >>> _lookup_item_id_('', i)
-    """
     if item_key_barcodes:
         if item_key in item_key_barcodes.keys():
             return item_key_barcodes[item_key]
 
 def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, verbose=False, item_key_barcodes:dict={}):
-    """
-    >>> c = {}
-    >>> count = add_to_dictionary('IY|Cancel Hold-bob|', c, False)
-    >>> d = {}
-    >>> count = add_to_dictionary('FE|Station Library|', d, True)
-    >>> count = add_to_dictionary('FF|Library Station|', d, True)
-    >>> count = add_to_dictionary('FG|Library|', d, True)
-    >>> data = 'E202301180024493003R ^S59IYFWCLOUDLIBRARY^FEEPLMNA^FGEPLHVY^FFEPLCPL^O'.strip().split('^')
-    >>> print(get_log_entry(data,c,d,1))
-    (0, {'timestamp': '2023-01-18 00:24:49', 'command_code': 'Cancel Hold-bob', 'station_library': 'MNA', 'library': 'HVY', 'library_station': 'CPL'})
-    >>> count = add_to_dictionary('hE|Transit Item|', c, False)
-    >>> count = add_to_dictionary('tJ|Catalog Key Number|', d, True)
-    >>> count = add_to_dictionary('tL|Call Sequence Code|', d, True)
-    >>> count = add_to_dictionary('IS|Copy Number|', d, True)
-    >>> i = {}
-    >>> add_itemkey_barcode('2371230|55|1|31221012345678   |', i)
-    1
-    >>> data = 'E202303231010243024R ^S00hEFWCALCIRC^FFCIRC^FEEPLCAL^FcNONE^dC19^tJ2371230^tL55^IS1^HH41224719^nuEPLRIV^nxHOLD^nrY^Fv2147483647^^O'.strip().split('^')
-    >>> print(get_log_entry(data,c,d,1,item_key_barcodes=i))
-    (7, {'timestamp': '2023-03-23 10:10:24', 'command_code': 'Transit Item', 'library_station': 'C', 'station_library': 'CAL', 'catalog_key_number': '2371230', 'call_sequence_code': '55', 'item_id': '31221012345678'})
-    """
     # E202303231010243024R ^S00hEFWCALCIRC^FFCIRC^FEEPLCAL^FcNONE^dC19^**tJ2371230**^**tL55**^**IS1**^**HH41224719**^nuEPLRIV^nxHOLD^nrY^Fv2147483647^^O
     # Where the following fields are                                       cat_key     seq_no   copy_no   hold_key  
     record = {}
@@ -280,7 +240,7 @@ def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, v
                 if item_key:
                     item_key.append(value)
                     _item_key_ = '|'.join(item_key)
-                    barcode = _lookup_item_id_(f"{_item_key_}|", item_key_barcodes)
+                    barcode = lookup_item_id(f"{_item_key_}|", item_key_barcodes)
                     if barcode:
                         data_code = "item_id"
                         value = barcode
@@ -297,7 +257,7 @@ def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, v
             record[data_code] = value
         except KeyError:
             err_count += 1
-            dc = _clean_string_(dc)
+            dc = clean_string(dc)
             data_code = f"data_code_{dc}"
             data_codes[dc] = data_code
             if verbose == True:
@@ -306,14 +266,11 @@ def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, v
                 print(f"*   '{dc}' is an unrecognized data code and will be recorded as 'data_code_{dc}': '{field[2:]}'.")
     return (err_count, record)
 
+# Converts 'selitem -oIB' output to a dictionary where the key is the item ID 
+# and the stored value is the associated bar code for the item.  
+# param: line:str - output line from selitem -oIB untouched. 
+# return: 1 
 def add_itemkey_barcode(line:str, dictionary:dict):
-    """
-    >>> i = {}
-    >>> add_itemkey_barcode('12345|55|1|31221012345678', i)
-    1
-    >>> print(f"{i}")
-    {'12345|55|1|': '31221012345678'}
-    """
     # Input line should look like '12345|55|1|31221012345678|' Straight from selitem -oIB
     ck_cs_cn_bc = line.split('|')
     if len(ck_cs_cn_bc) < 4:
@@ -358,26 +315,21 @@ def translate(codeFile:str, is_data_code=True) ->str:
     t.close()
     return translated_file
 
-
+# Trivial function that, given a string of a Symphony command code or 
+# data code, and its english translation separated by a pipe, loads 
+# the code as the key and definition as the values. 
+# param: line:str line of code|definition. 
+# param: dictionary:dict destination storage of the key value pair. 
+# param: is_data_code:bool by default all spaces will also be converted 
+#   to underscores.
+# return: 1
 def add_to_dictionary(line:str, dictionary:dict, is_data_code=True):
-    """
-    >>> c={}
-    >>> add_to_dictionary('cw|ATHS (thesaurus) description|', c, False)
-    1
-    >>> print(f"{c}")
-    {'cw': 'ATHS thesaurus description'}
-    >>> c={}
-    >>> add_to_dictionary('cw|AT.HS [z/39]|', c, True)
-    1
-    >>> print(f"{c}")
-    {'cw': 'at.hs_z39'}
-    """
     cmd_array = line.split('|')
     # clean the definition of special characters.
     command = cmd_array[0]
     definition = cmd_array[1]
     # Remove any weird characters. This should cover it, they're pretty clean.
-    definition = _clean_string_(definition, is_data_code)
+    definition = clean_string(definition, is_data_code)
     dictionary[command] = definition
     return 1
 
@@ -540,6 +492,7 @@ if __name__ == "__main__":
     if TEST_MODE == True:
         import doctest
         doctest.testmod()
+        doctest.testfile("hist2json.tst")
     else:
         main(sys.argv[1:])
 # EOF
