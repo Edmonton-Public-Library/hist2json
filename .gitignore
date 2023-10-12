@@ -1,6 +1,6 @@
 *.json
-*.hist
-*.hist.Z
+Histlog_2023-04-12.hist
+Histlog_2023-04-13.hist
 *.txt
 *.zip
 cmdcodes*

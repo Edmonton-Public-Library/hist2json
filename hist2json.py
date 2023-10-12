@@ -30,7 +30,7 @@ import gzip
 import socket
 from os.path import exists
 import subprocess
-# TODO: Add switch to over-ride client type table.
+
 # There are 3 tasks: 
 # 1) Parse and load cmd codes and data codes into dictionaries.
 # 2) Parse and translate hist files records into JSON.
@@ -52,11 +52,11 @@ VERSION    = "1.04.03"
 # Turning this to True will run all doctests.
 TEST_MODE  = True
 ILS_NAME   = 'edpl.sirsidynix.net'
-HOME       = f"/software/EDPL"
-ILS_CC_PATH= f"{HOME}/Unicorn/Custom/cmdcode"
-ILS_DC_PATH= f"{HOME}/Unicorn/Custom/datacode"
-TRANSLATE  = f"{HOME}/Unicorn/Bin/translate"
-HIST_DIR   = f"{HOME}/Unicorn/Logs/Hist"
+HOME       = f"/software/EDPL/Unicorn"
+ILS_CC_PATH= f"{HOME}/Custom/cmdcode"
+ILS_DC_PATH= f"{HOME}/Custom/datacode"
+TRANSLATE  = f"{HOME}/Bin/translate"
+HIST_DIR   = f"{HOME}/Logs/Hist"
 APP        = 'h2j'
 # A replacement date Symphony's deep time 'NEVER' which won't do as a timestamp.
 NEVER      = '2040-01-01'
@@ -179,15 +179,15 @@ def to_date(data:str) -> str:
 
 # Cleans a standard set of special characters from a string. 
 # param: string to clean. 
-# param: spc_to_underscore as boolean, True will remove all special characters 
-#   and replace any spaces with underscores.
+# param: spc_to_underscore:bool - True will remove all special characters 
+#   and replace any spaces with underscores. Default False, leave spaces intact.  
 def clean_string(s:str, spc_to_underscore=False) -> str:
     # Remove any weird characters. This should cover it, they're pretty clean.
     for ch in ['\\','/','`','*','_','{','}','[',']','(',')','<','>','!','$',',','\'']:
         if ch in s:
             s = s.replace(ch, "")
     # The command code is a s, not an identifier, so don't convert it into snake case.
-    if spc_to_underscore == True:
+    if spc_to_underscore:
         s = s.replace(' ', '_').lower()
     return s
 
@@ -328,7 +328,8 @@ def add_to_dictionary(line:str, dictionary:dict, is_data_code=True):
     # clean the definition of special characters.
     command = cmd_array[0]
     definition = cmd_array[1]
-    # Remove any weird characters. This should cover it, they're pretty clean.
+    # Make sure dict keys don't include special chars and if they are 
+    # datacodes, replace spaces with underscores. 
     definition = clean_string(definition, is_data_code)
     dictionary[command] = definition
     return 1
@@ -457,8 +458,8 @@ def main(argv):
     ## Process the history log into JSON.
     # Open the json file ready for output.
     j = open(json_file, mode='w', encoding='ISO-8859-1')
+    # f = ''
     # History file handle; either gzipped or regular text.
-    f = ''
     if is_compressed_hist == True:
         f = gzip.open(hist_log_file, mode='rt', encoding='ISO-8859-1')
     else: # Not a zipped history file
