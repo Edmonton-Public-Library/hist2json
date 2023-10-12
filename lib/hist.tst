@@ -3,6 +3,7 @@ Provides tests for hist.py
 
 >>> from hist import Hist
 >>> hist = Hist('test.hist', commandCodes={'A':'bee'}, debug=True)
+WARNING: item IDs will not be converted into item barcodes.
 cmd_code_path :../test/cmdcode
 data_code_path:../test/datacode
 translate_cmd :../test/translate
@@ -17,6 +18,7 @@ Test data codes read from file.
 ------------------------------
 
 >>> hist = Hist('test.hist', dataCodes={'A':'bee'}, debug=True)
+WARNING: item IDs will not be converted into item barcodes.
 cmd_code_path :../test/cmdcode
 data_code_path:../test/datacode
 translate_cmd :../test/translate

@@ -57,7 +57,9 @@ class Hist:
             self.bar_codes = barCodes
         # More commonly specify a path to the selitem -oIB output file. 
         elif isinstance(barCodes, str):
-            barcode_errors = self.readBarCodes(barCodes)
+            self.readBarCodes(barCodes)
+        else:
+            print(f"WARNING: item IDs will not be converted into item barcodes.")
         self.line_no        = 0
         if debug:
             print(f"cmd_code_path :{self.cmd_code_path }")
@@ -92,7 +94,6 @@ class Hist:
     # param: line:str - output line from selitem -oIB untouched. 
     # return: 1 
     def readBarCodes(self, barCodeFile:str):
-        errors = 0
         if not path.exists(barCodeFile):
             msg = f"The file {barCodeFile} was not found."
             raise FileNotFoundError(msg)
@@ -106,7 +107,6 @@ class Hist:
                 item_key = f"{ck_cs_cn_bc[0]}|{ck_cs_cn_bc[1]}|{ck_cs_cn_bc[2]}|"
                 item_id = ck_cs_cn_bc[3].rstrip()
                 self.bar_codes[item_key] = item_id
-        return errors
 
     # Helper function that, given a string of a Symphony command code or 
     # data code, and its english translation separated by a pipe, loads 
