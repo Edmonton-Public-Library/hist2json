@@ -83,17 +83,43 @@ param: spc_to_underscore as boolean, True will remove all special characters and
 This isnt a tring tht ive liked untilnow 
 
 
-Test to_date() method
+Test toDate() method
 ---------------------
 
->>> hist.to_date('01/13/2023')
+>>> hist.toDate('01/13/2023')
 '2023-01-13'
->>> hist.to_date('E202301180024483003R ')
+>>> hist.toDate('E202301180024483003R ')
 '2023-01-18 00:24:48'
->>> hist.to_date('1/3/2023')
+>>> hist.toDate('1/3/2023')
 '2023-01-03'
->>> hist.to_date('20230118002448')
+>>> hist.toDate('20230118002448')
 '2023-01-18 00:24:48'
->>> hist.to_date('01/13/2023,5:33 PM')
+>>> hist.toDate('01/13/2023,5:33 PM')
 '2023-01-13'
 
+Test translateCode()
+--------------------
+>>> hist.translateCode('EV', whichDict='commandcode')
+'Discharge Item'
+>>> hist.translateCode('NQ')
+'item_id'
+>>> hist.translateCode('6', whichDict='clientcode')
+'CLIENT_SIP2'
+>>> hist.translateCode('99', whichDict='clientcode')
+'99'
+>>> hist.translateCode('99', whichDict='clientcode', verbose=True)
+'99'
+>>> hist.translateCode('S61EVFWSMTCHTLHL1', whichDict='commandcode')
+'Discharge Item'
+>>> hist.translateCode('NQ31221120423970')
+'item_id'
+>>> hist.translateCode('NQ31221120423970', asValue=True)
+'31221120423970'
+>>> hist.translateCode('zZ12345678')
+'zZ'
+
+Test convertLogEntry()
+----------------------
+>>> data = "E202310100510083031R ^S01EVFFADMIN^FEEPLRIV^FcNONE^NQ31221112079020^^O00049".split('^')
+>>> hist.convertLogEntry(data, 1)
+(0, {'timestamp': '2023-10-10 05:10:08', 'command_code': 'Discharge Item', 'station_library': 'RIV', 'station_login_clearance': 'NONE', 'item_id': '31221112079020', 'date_of_discharge': '2023-10-10'})

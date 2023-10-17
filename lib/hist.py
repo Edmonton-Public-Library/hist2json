@@ -79,8 +79,33 @@ class Hist:
             self.readBarCodes(barCodes)
         else:
             print(f"WARNING: item IDs will not be converted into item barcodes.")
+        self.hold_client_table = {
+            '0': 'CLIENT_UNKNOWN',
+            '1': 'CLIENT_WEBCAT',
+            '2': 'CLIENT_3MSERVER',
+            '3': 'CLIENT_WORKFLOWS',
+            '4': 'CLIENT_INFOVIEW',
+            '5': 'CLIENT_ONLINE_CATALOG',
+            '6': 'CLIENT_SIP2',
+            '7': 'CLIENT_NCIP',
+            '8': 'CLIENT_SVA',
+            '9': 'CLIENT_WEB_STAFF',
+            '10': 'CLIENT_POCKET_CIRC',
+            '11': 'CLIENT_WS_PATRON',
+            '12': 'CLIENT_WS_BOOKMYNE',
+            '13': 'CLIENT_WS_DS',
+            '14': 'CLIENT_WS_STAFF',
+            '15': 'BC_PAC',
+            '16': 'BC_CAT',
+            '17': 'BOOKMYNE_P',
+            '18': 'SOCIAL_LIB',
+            '19': 'MOBLCIRC_S',
+            '20': 'BC_CIRC',
+            '21': 'BC_ACQ',
+            '22': 'BC_MOBILE'
+        }
         self.hist_file      = histFile
-        self.hist_log_list       = []
+        self.hist_log_list  = []
         self.isCompressed   = histFile.endswith('.Z')
         
         if debug:
@@ -104,69 +129,97 @@ class Hist:
             if item_key in self.bar_codes.keys():
                 return self.bar_codes[item_key]
 
+    # Translates command, data, and client codes into human-readable form. 
+    # For example 'CV' command code will translate into 'Charge Item'. 
+    # param: rawCode:str - command, data, or client code string. 
+    def translateCode(self, rawCode:str, whichDict:str='datacode', verbose:bool=False, asValue:bool=False, lineNumber:int=1) ->str:
+        translated_code = rawCode
+        value           = ''
+        if whichDict == 'commandcode':
+            if len(rawCode) > 2:
+                # As in 'S61EVFWSMTCHTLHL1' wanted: 'EV'
+                rawCode = rawCode[3:5]
+                value   = rawCode[5:]
+            translated_code = self.cmd_codes.get(rawCode)
+        elif whichDict == 'datacode':
+            if len(rawCode) > 2:
+                # As in 'NQ31221120423970' wanted: 'NQ'
+                value   = rawCode[2:]
+                rawCode = rawCode[0:2]
+            translated_code = self.data_codes.get(rawCode)
+            if not translated_code:
+                translated_code = f"{rawCode}"
+                if verbose:
+                    sys.stderr.write(f"* warning: on line {lineNumber}, '{rawCode}' is an unrecognized data code.\n")
+        elif whichDict == 'clientcode':
+            translated_code = self.hold_client_table.get(rawCode)
+        else:
+            if verbose:
+                sys.stderr.write(f"* warning: on line {lineNumber}, invalid lookup for {rawCode} in table {whichDict}\n")
+        if asValue:
+            return value
+        # If get failed on any of the above dictionaries send back a cleaned version of the code.
+        if not translated_code:
+            return rawCode
+        return translated_code
+
     # TODO: Test
-    def get_log_entry(self, data:list, line_no:int, verbose=False):
+    def convertLogEntry(self, data:list, line_no:int, verbose=False):
         # E202303231010243024R ^S00hEFWCALCIRC^FFCIRC^FEEPLCAL^FcNONE^dC19^**tJ2371230**^**tL55**^**IS1**^**HH41224719**^nuEPLRIV^nxHOLD^nrY^Fv2147483647^^O
         # Where the following fields are                                       cat_key     seq_no   copy_no   hold_key  
         record = {}
-        record['timestamp'] = self.to_date(data[0][1:15])  # 'E202301180024483003R' => '20230118002448'
-        # convert command code.
-        cmd = data[1][3:5]
+        record['timestamp'] = self.toDate(data[0])  # 'E202301180024483003R' => '20230118002448'
         err_count = 0
-        record['command_code'] = self.cmd_codes[cmd]
+        record['command_code'] = self.translateCode(data[1], whichDict='commandcode', verbose=verbose, lineNumber=line_no)
+        if not record.get('command_code'):
+            err_count += 1
+            sys.stderr.write(f"*error on line {line_no}, missing command_code!\n")
+            return (err_count, record)
         # Capture 'hE' transit item data codes for cat key, call seq, and copy number. 
         item_key = []
         # Convert all data codes, or report those that are not defined.
         for field in data[2:]:
-            dc = field.strip()[0:2]
+            data_code = self.translateCode(field, verbose=verbose, lineNumber=line_no)
             # Don't process empty data fields '^^' or EOL '0' or 'O0'.
-            if len(dc) < 2 or dc == 'O0':
+            if len(data_code) < 2 or data_code == 'O0':
                 continue
-            try:
-                data_code = self.data_codes[dc]
-                value = field[2:]
-                if re.match(r'(.+)?date', data_code) or data_code == 'user_last_activity':
-                    value = self.to_date(value)
-                # Get the 3-char branch code by removing the initial 'EPL'.
-                elif re.match(r'(.+)?library', data_code) or re.match(r'transit_to', data_code) or re.match(r'transit_from', data_code):
-                    value = value[3:]
-                # Add fake user pin.
-                elif re.match(r'user_pin', data_code):
-                    value = 'xxxxx'
-                # Capture 'tJ' - catalog_key_number
-                elif re.match(r'catalog_key_number', data_code):
-                    item_key.insert(0, value)
-                # Capture 'tL' - call_sequence_code
-                elif re.match(r'call_sequence_code', data_code):
-                    item_key.append(value)
-                # Capture 'IS' - copy_number but only if catalog_key_number and call_sequence_code were found.
-                elif re.match(r'copy_number', data_code):
-                    if item_key:
-                        item_key.append(value)
-                        _item_key_ = '|'.join(item_key)
-                        barcode = self.lookup_item_id(f"{_item_key_}|")
-                        if barcode:
-                            data_code = "item_id"
-                            value = barcode
-                # Get rid of this tags leading '|a' in customer in this specific data code.
-                elif re.match(r'entry_or_tag_data', data_code):
-                    value = value[2:]
-                elif re.match(r'client_type', data_code):
-                    try:
-                        temp = HOLD_CLIENT_TABLE[value]
-                        value = temp
-                    except KeyError:
-                        err_count += 1
-                        sys.stderr.write(f"* warning on line {line_no}:\n*   missing hold client type: {value}\n")
+            value = self.translateCode(field, verbose=verbose, asValue=True, lineNumber=line_no)
+            if len(data_code) == 2:
+                data_code = f"data_code_{data_code}"
                 record[data_code] = value
-            except KeyError:
-                err_count += 1
-                dc = self.clean_string(dc)
-                data_code = f"data_code_{dc}"
-                self.data_codes[dc] = data_code
-                if err_count == 1:
-                    sys.stderr.write(f"* warning on line {line_no}:\n*   {data}\n")
-                print(f"*   '{dc}' is an unrecognized data code and will be recorded as 'data_code_{dc}': '{field[2:]}'.")
+                continue
+            if re.match(r'(.+)?date', data_code) or data_code == 'user_last_activity':
+                value = self.toDate(value)
+            # Get the 3-char branch code by removing the initial 'EPL'.
+            elif re.match(r'(.+)?library', data_code) or re.match(r'transit_to', data_code) or re.match(r'transit_from', data_code):
+                value = value[3:]
+            # Add fake user pin.
+            elif re.match(r'user_pin', data_code):
+                value = 'xxxxx'
+            # Capture 'tJ' - catalog_key_number
+            elif re.match(r'catalog_key_number', data_code):
+                item_key.insert(0, value)
+            # Capture 'tL' - call_sequence_code
+            elif re.match(r'call_sequence_code', data_code):
+                item_key.append(value)
+            # Capture 'IS' - copy_number but only if catalog_key_number and call_sequence_code were found.
+            elif re.match(r'copy_number', data_code):
+                if item_key:
+                    item_key.append(value)
+                    _item_key_ = '|'.join(item_key)
+                    barcode = self.lookup_item_id(f"{_item_key_}|")
+                    if barcode:
+                        data_code = "item_id"
+                        value = barcode
+            # Get rid of this tags leading '|a' in customer in this specific data code.
+            elif re.match(r'entry_or_tag_data', data_code):
+                value = value[2:]
+            elif re.match(r'client_type', data_code):
+                value = self.translateCode(value, whichDict='clientcode', verbose=verbose, lineNumber=line_no)
+            record[data_code] = value
+        if record['command_code'] == "Discharge Item" and not record.get('date_of_discharge'):
+            # Discharge item with no 'CO', 'date_of_discharge'.
+            record['date_of_discharge'] = self.toDate(data[0], justDate=True)
         return (err_count, record)
 
     # Converts and writes the JSON hist file contents to file.
@@ -190,7 +243,7 @@ class Hist:
         for line in f:
             line_no += 1
             fields = line.strip().split('^')
-            (errors, record) = self.get_log_entry(fields, line_no)
+            (errors, record) = self.convertLogEntry(fields, line_no)
             missing_data_codes += errors
             # Append to list if output JSON proper
             if not mongoDb:
@@ -291,7 +344,7 @@ class Hist:
     # Converts the many types of date strings stored in History logs into 'yyyy-mm-dd' database-ready format. 
     # param: data string which may or may not contain a date string. 
     # return: the date converted to timestamp, or '1900-01-01' if a date can't be parsed from the string.
-    def to_date(self, data:str) -> str:
+    def toDate(self, data:str, justDate:bool=False) -> str:
         # And some dates have 1/18/2023,5:40 (sigh)
         # And some dates have 'E202301180024483003R '
         my_date = data.split(',')[0]
@@ -307,6 +360,8 @@ class Hist:
             # Day
             new_date.append(my_date[6:8])
             d = '-'.join(new_date)
+            if justDate:
+                return f"{d}"
             # Hour
             new_time.append(my_date[8:10])
             # minute

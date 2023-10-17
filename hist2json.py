@@ -31,9 +31,11 @@ import socket
 from os.path import exists
 import subprocess
 
-# There are 3 tasks: 
-# 1) Parse and load cmd codes and data codes into dictionaries.
-# 2) Parse and translate hist files records into JSON.
+# Tasks: 
+# * Parse and load cmd codes into dictionary. Optional.
+# * Parse and load data codes into dictionary. Optional.
+# * Load bar codes so lookups can be done by barcode instead of item key. Optional.
+# * Parse and translate hist files records into JSON.
 #
 # Example: data code document (cmd codes are similar)
 # 0C|item category five|
