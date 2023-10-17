@@ -2,6 +2,22 @@ Provides tests for hist.py
 
 
 >>> from hist import Hist
+>>> hist = Hist('test.hist', dataCodes={'A':'bee'}, commandCodes={'C':'dee'}, debug=True)
+WARNING: item IDs will not be converted into item barcodes.
+cmd_code_path :../test/cmdcode
+data_code_path:../test/datacode
+translate_cmd :../test/translate
+hist_dir      :../test/Hist
+encoding      :ISO-8859-1
+cmd_codes len :1
+data_codes len:1
+barCode file  :None
+bar_codes read:0
+>>> hist.updateDataCodes({'B':'sea'})
+>>> print(f"{hist.data_codes}")
+{'A': 'bee', 'B': 'sea'}
+
+
 >>> hist = Hist('test.hist', commandCodes={'A':'bee'}, debug=True)
 WARNING: item IDs will not be converted into item barcodes.
 cmd_code_path :../test/cmdcode
