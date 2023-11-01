@@ -45,7 +45,15 @@ from datetime import datetime
 
 class Hist:
 
-    def __init__(self, histFile:str, encoding:str='ISO-8859-1', unicornPath:str='..', 
+    # Constructor 
+    # param: histFile:str - name of the history file to parse. See debug switch for exceptions. 
+    # param: encoding:str - encoding to be used when reading and writing to files. 
+    #   The default is 'ISO-8859-1' but 'UTF-8' is acceptable as well. 
+    # param: unicornPath:str - unicorn directory on the ILS. See debug switch for exceptions. 
+    # param: commandCodes - a dictionary or path to the cmdcode file. See debug switch for exceptions. 
+    #   By default the application will look in the unicorn directory where Symphony normally keeps it.  
+    # param: dataCodes 
+    def __init__(self, encoding:str='ISO-8859-1', unicornPath:str='..', 
       commandCodes=None, dataCodes=None, barCodes=None, debug:bool=False):
         if debug:
             cus_dir = path.join(unicornPath, 'test')
@@ -58,7 +66,6 @@ class Hist:
         self.cmd_code_path  = path.join(cus_dir, 'cmdcode')
         self.data_code_path = path.join(cus_dir, 'datacode')
         self.translate_cmd  = path.join(bin_dir, 'translate')
-        self.hist_dir       = path.join(log_dir, 'Hist')
         self.encoding       = encoding
         self.cmd_codes      = {}
         if isinstance(commandCodes, dict):
@@ -104,15 +111,11 @@ class Hist:
             '21': 'BC_ACQ',
             '22': 'BC_MOBILE'
         }
-        self.hist_file      = histFile
-        self.hist_log_list  = []
-        self.isCompressed   = histFile.endswith('.Z')
         
         if debug:
             print(f"cmd_code_path :{self.cmd_code_path }")
             print(f"data_code_path:{self.data_code_path}")
             print(f"translate_cmd :{self.translate_cmd }")
-            print(f"hist_dir      :{self.hist_dir      }")
             print(f"encoding      :{self.encoding      }")
             print(f"cmd_codes len :{len(self.cmd_codes)}")
             print(f"data_codes len:{len(self.data_codes)}")
@@ -123,7 +126,7 @@ class Hist:
     # param: item key. Pipe seperated cat key, call sequence, item copy. 
     # param: dictionary of item keys, and barcode values. 
     # return: barcode or None if lookup fails.
-    def lookup_item_id(self, item_key:str) -> str:
+    def lookupItemId(self, item_key:str) -> str:
         # Given an item id as: f"{_item_key_}|" or '12345|55|1|' get the item id '31221012345678'
         if self.bar_codes:
             if item_key in self.bar_codes.keys():
@@ -163,7 +166,11 @@ class Hist:
             return rawCode
         return translated_code
 
-    # TODO: Test
+    # Converts a single line of a hist file into JSON. 
+    # param: data:list - string fields from the line of hist. 
+    # param: line_no:int - the current line of the hist file. 
+    # param: verbose:bool - True will output warnings about missing data code translations. 
+    #   False will output fewer messages.  
     def convertLogEntry(self, data:list, line_no:int, verbose=False):
         # E202303231010243024R ^S00hEFWCALCIRC^FFCIRC^FEEPLCAL^FcNONE^dC19^**tJ2371230**^**tL55**^**IS1**^**HH41224719**^nuEPLRIV^nxHOLD^nrY^Fv2147483647^^O
         # Where the following fields are                                       cat_key     seq_no   copy_no   hold_key  
@@ -207,7 +214,7 @@ class Hist:
                 if item_key:
                     item_key.append(value)
                     _item_key_ = '|'.join(item_key)
-                    barcode = self.lookup_item_id(f"{_item_key_}|")
+                    barcode = self.lookupItemId(f"{_item_key_}|")
                     if barcode:
                         data_code = "item_id"
                         value = barcode
@@ -223,20 +230,34 @@ class Hist:
         return (err_count, record)
 
     # Converts and writes the JSON hist file contents to file.
-    # TODO: test
-    def toJson(self, outFile:str=None, mongoDb:bool=False):
-        json_file = outFile
-        if not json_file:
-            json_file = f"{Path(self.hist_file).with_suffix('')}"
+    def toJson(self, histFile:str=None, outFile:str=None, mongoDb:bool=False):
+        if not histFile:
+            return
+        # TODO: remove tricky path handling for hist files.
+        # hist_file     = path.join(log_dir, 'Hist', histFile)
+        hist_file = histFile
+        is_compressed_hist = True
+        if not path.isfile(hist_file):
+            sys.stderr.write(f"**error, no such file {hist_file}.\n")
+            sys.exit()
+        print(f"hist_file     :{self.hist_file      }")
+        # test if the file is a zipped history file. They are named '*.Z'.
+        if not hist_file.endswith('.Z'):
+            is_compressed_hist = False
+        hist_log_list = []
+        if not outFile:
+            json_file = Path(self.hist_file).with_suffix('')
             json_file = f"{self.hist_file}.json"
+        else:
+            json_file = outFile
         ## Process the history log into JSON.
         # Open the json file ready for output.
-        j = open(json_file, mode='w', encoding='ISO-8859-1')
+        j = open(json_file, mode='w', encoding=self.encoding)
         # History file handle; either gzipped or regular text.
-        if self.isCompressed == True:
-            f = gzip.open(self.hist_file, mode='rt', encoding='ISO-8859-1')
+        if is_compressed_hist:
+            f = gzip.open(self.hist_file, mode='rt', encoding=self.encoding)
         else: # Not a zipped history file
-            f = open(self.hist_file, mode='r', encoding='ISO-8859-1')
+            f = open(self.hist_file, mode='r', encoding=self.encoding)
         # Process each of the lines.
         line_no = 0
         missing_data_codes = 0
@@ -247,21 +268,25 @@ class Hist:
             missing_data_codes += errors
             # Append to list if output JSON proper
             if not mongoDb:
-                self.hist_log_list.append(record)
+                hist_log_list.append(record)
             else: # else add each record to file a-la-MongoDB.
                 json.dump(record, j, ensure_ascii=False, indent=2)
         if not mongoDb:
-            json.dump(self.hist_log_list, j, ensure_ascii=False, indent=2)
+            json.dump(hist_log_list, j, ensure_ascii=False, indent=2)
         j.close()
 
-    # Reads the command codes file from the Unicorn directory.  
+    # Reads the command codes file from the Unicorn directory. 
+    # unless the constructor included debug=True, in which
+    # case the ../test directory will be searched for command
+    # code, data code, and item lists. The application will 
+    # then expect to find the test hist file in ../test/Hist.   
     def readConfiguredCommandCodes(self):
         if not path.exists(self.cmd_code_path):
             msg = f"The file {self.cmd_code_path} was not found."
             raise FileNotFoundError(msg)
         with open(self.cmd_code_path, mode='r', encoding=self.encoding) as f:
             for line in f:
-                self.add_to_dictionary(line, self.cmd_codes, underscore=False)
+                self.addToDictionary(line, self.cmd_codes, underscore=False)
 
     # Reads the data codes from the system datacode file in the Unicorn 
     # directory, or if debug is used in the constructor, from the datacode
@@ -272,7 +297,7 @@ class Hist:
             raise FileNotFoundError(msg)
         with open(self.data_code_path, mode='r', encoding=self.encoding) as f:
             for line in f:
-                self.add_to_dictionary(line, self.data_codes, underscore=True)
+                self.addToDictionary(line, self.data_codes, underscore=True)
 
     # Converts 'selitem -oIB' output to a dictionary where the key is the item ID 
     # and the stored value is the associated bar code for the item.  
@@ -293,8 +318,26 @@ class Hist:
                 item_id = ck_cs_cn_bc[3].rstrip()
                 self.bar_codes[item_key] = item_id
 
+    # Reads the client code table. The table contains the definitions 
+    # used by Symphony for translating client codes into human-readable 
+    # client type values, like 'BC_MOBILE', 'BC_CIRC' etc. This method 
+    # is typically called from the constructor when the calling application
+    # starts. 
+    # param: clientFile:str - path to the client file. 
+    def readClientCodes(self, clientFile:str):
+        if path.isfile(clientFile) == False:
+            sys.stderr.write(f"**error, no such client file {clientFile}.\n")
+            sys.exit()
+        try:
+            with open(clientFile, mode='r') as j_clients:
+                self.hold_client_table = json.load(j_clients)
+        except:
+            sys.stderr.write(f"**error while reading JSON from {clientFile}.\n")
+            sys.exit()
+        
+
     # Some data codes don't have definitions in the vendor-supplied datacode file. 
-    # This allows you to add new ones, or add better definitions or different languages. 
+    # This method allows you to add or update better definitions or translations. 
     # param: dataCodes:dict|str - new data code definitions to add to, and or clobber existing
     # codes. Can be a dict in which case all the items are added to the datacodes, but
     # if dataCodes is a string, it will be assumed to be a pipe-delimited data code 
@@ -304,10 +347,10 @@ class Hist:
             if isinstance(dataCodes, dict):
                 for key, value in dataCodes.items():
                     entry = f"{key}|{value}"
-                    self.add_to_dictionary(entry, self.data_codes, underscore=True)
+                    self.addToDictionary(entry, self.data_codes, underscore=True)
             elif isinstance(dataCodes, str):
                 entry = dataCodes
-                self.add_to_dictionary(entry, self.data_codes, underscore=True)
+                self.addToDictionary(entry, self.data_codes, underscore=True)
 
     # Helper function that, given a string of a Symphony command code or 
     # data code, and its english translation separated by a pipe, loads 
@@ -316,22 +359,21 @@ class Hist:
     # param: dictionary:dict destination storage of the key value pair. 
     # param: underscore:bool by default all spaces will also be converted 
     #   to underscores. False will turn off this feature. 
-    def add_to_dictionary(self, line:str, dictionary:dict, underscore:bool):
+    def addToDictionary(self, line:str, dictionary:dict, underscore:bool):
         key_value = line.split('|')
         # clean the definition of special characters.
         key = key_value[0]
         value = key_value[1]
         # Make sure dict keys don't include special chars and if they are 
         # datacodes, replace spaces with underscores. 
-        value = self.clean_string(value, underscore=underscore)
+        value = self.cleanString(value, underscore=underscore)
         dictionary[key] = value
 
-    
     # Cleans a standard set of special characters from a string. 
     # param: string to clean. 
     # param: underscore:bool - True will remove all special characters 
     #   and replace any spaces with underscores. Default False, leave spaces intact.  
-    def clean_string(self, s:str, underscore:bool=False) -> str:
+    def cleanString(self, s:str, underscore:bool=False) -> str:
         # Remove any weird characters. This should cover it, they're pretty clean.
         for ch in ['\\','/','`','*','_','{','}','[',']','(',')','<','>','!','$',',','\'']:
             if ch in s:
