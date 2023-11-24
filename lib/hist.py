@@ -25,13 +25,13 @@ import json
 import gzip
 from pathlib import Path
 from datetime import datetime
+import socket
+import subprocess
+
 ###
 # Class to read SirsiDynix Symphony history (log) files. 
 # The parameters of commandCodes, dataCodes, and barCodes
-# are expected to be dictionaries, or a string-path to
-# a file that contains the list. For example: 
-# 
-# hF|Receive From Transit 
+# are expected to be dictionaries, or a stringexists
 # 
 # The dictionaries commandCodes, dataCodes are keys of 
 # two character codes, and their definition counterparts. 
@@ -42,7 +42,8 @@ from datetime import datetime
 # 
 # 12345|34|9|31221012345678 
 ###
-
+# A replacement date Symphony's deep time 'NEVER' which won't do as a timestamp.
+NEVER = '2099-01-01'
 class Hist:
 
     # Constructor 
@@ -54,29 +55,18 @@ class Hist:
     #   By default the application will look in the unicorn directory where Symphony normally keeps it.  
     # param: dataCodes 
     def __init__(self, encoding:str='ISO-8859-1', unicornPath:str='..', 
-      commandCodes=None, dataCodes=None, barCodes=None, debug:bool=False):
-        if debug:
-            cus_dir = path.join(unicornPath, 'test')
-            bin_dir = path.join(unicornPath, 'test')
-            log_dir = path.join(unicornPath, 'test')
-        else:
-            cus_dir = path.join(unicornPath, 'Custom')
-            bin_dir = path.join(unicornPath, 'Bin')
-            log_dir = path.join(unicornPath, 'Log')
-        self.cmd_code_path  = path.join(cus_dir, 'cmdcode')
-        self.data_code_path = path.join(cus_dir, 'datacode')
-        self.translate_cmd  = path.join(bin_dir, 'translate')
+      commandCodes=None, dataCodes=None, barCodes=None, clientCodes=None, debug:bool=False):
+        self.line_count     = 0
+        self.cmd_code_path  = ''
+        self.data_code_path = ''
+        self.translate_cmd  = ''
+        self.is_ils         = False
+        self.setUnicorn(unicornPath=unicornPath, debug=debug)
         self.encoding       = encoding
         self.cmd_codes      = {}
-        if isinstance(commandCodes, dict):
-            self.cmd_codes  = commandCodes
-        else:
-            self.readConfiguredCommandCodes()
+        self.setCommandCodes(commandCodes)
         self.data_codes     = {}
-        if isinstance(dataCodes, dict):
-            self.data_codes = dataCodes
-        else:
-            self.readConfiguredDataCodes()
+        self.setDataCodes(dataCodes)
         self.bar_codes      = {}
         # Can specify a dict of IDs and barcodes for testing
         if isinstance(barCodes, dict):
@@ -86,47 +76,63 @@ class Hist:
             self.readBarCodes(barCodes)
         else:
             print(f"WARNING: item IDs will not be converted into item barcodes.")
-        self.hold_client_table = {
-            '0': 'CLIENT_UNKNOWN',
-            '1': 'CLIENT_WEBCAT',
-            '2': 'CLIENT_3MSERVER',
-            '3': 'CLIENT_WORKFLOWS',
-            '4': 'CLIENT_INFOVIEW',
-            '5': 'CLIENT_ONLINE_CATALOG',
-            '6': 'CLIENT_SIP2',
-            '7': 'CLIENT_NCIP',
-            '8': 'CLIENT_SVA',
-            '9': 'CLIENT_WEB_STAFF',
-            '10': 'CLIENT_POCKET_CIRC',
-            '11': 'CLIENT_WS_PATRON',
-            '12': 'CLIENT_WS_BOOKMYNE',
-            '13': 'CLIENT_WS_DS',
-            '14': 'CLIENT_WS_STAFF',
-            '15': 'BC_PAC',
-            '16': 'BC_CAT',
-            '17': 'BOOKMYNE_P',
-            '18': 'SOCIAL_LIB',
-            '19': 'MOBLCIRC_S',
-            '20': 'BC_CIRC',
-            '21': 'BC_ACQ',
-            '22': 'BC_MOBILE'
-        }
-        
+        # Load the dictionary of hold clients. These are the types of services 
+        # that can place holds.  
+        self.client_code_file = clientCodes
+        self.hold_client_table= {}
+        self.setClientCodes(clientCodes)
+        self.errors = 0
+        self.missing_data_codes = {}
         if debug:
             print(f"cmd_code_path :{self.cmd_code_path }")
             print(f"data_code_path:{self.data_code_path}")
             print(f"translate_cmd :{self.translate_cmd }")
             print(f"encoding      :{self.encoding      }")
-            print(f"cmd_codes len :{len(self.cmd_codes)}")
-            print(f"data_codes len:{len(self.data_codes)}")
+            print(f"cmd_codes len :{self.getCommandCodeCount()}")
+            print(f"data_codes len:{self.getDataCodeCount()}")
             print(f"barCode file  :{barCodes}")
-            print(f"bar_codes read:{len(self.bar_codes)}")
+            print(f"bar_codes read:{self.getBarCodeCount()}")
     
+    def getLineCount(self) -> int:
+        return self.line_count
+
+    def getCommandCodeCount(self) -> int:
+        return len(self.cmd_codes)
+
+    def getDataCodeCount(self) -> int:
+        return len(self.data_codes)
+
+    def getBarCodeCount(self) -> int:
+        return len(self.bar_codes)
+
+    def getMissingDataCodes(self) -> dict:
+        return self.missing_data_codes
+
+    def getErrorCount(self) -> int:
+        return self.errors
+
+    # Allows caller to reset the Unicorn path after Hist object has been created. 
+    # param: unicornPath:str required, path to Symphony ILS Unicorn directory. 
+    def setUnicorn(self, unicornPath:str, debug:bool=False):
+        if unicornPath:
+            self.is_ils = True
+            if debug:
+                cus_dir = path.join(unicornPath, 'test')
+                bin_dir = path.join(unicornPath, 'test')
+                log_dir = path.join(unicornPath, 'test')
+            else:
+                cus_dir = path.join(unicornPath, 'Custom')
+                bin_dir = path.join(unicornPath, 'Bin')
+                log_dir = path.join(unicornPath, 'Log')
+            self.cmd_code_path  = path.join(cus_dir, 'cmdcode')
+            self.data_code_path = path.join(cus_dir, 'datacode')
+            self.translate_cmd  = path.join(bin_dir, 'translate')
+
     # Given an item key will lookup the associated barcode. 
     # param: item key. Pipe seperated cat key, call sequence, item copy. 
     # param: dictionary of item keys, and barcode values. 
     # return: barcode or None if lookup fails.
-    def lookupItemId(self, item_key:str) -> str:
+    def __lookup_item_id__(self, item_key:str) -> str:
         # Given an item id as: f"{_item_key_}|" or '12345|55|1|' get the item id '31221012345678'
         if self.bar_codes:
             if item_key in self.bar_codes.keys():
@@ -135,7 +141,7 @@ class Hist:
     # Translates command, data, and client codes into human-readable form. 
     # For example 'CV' command code will translate into 'Charge Item'. 
     # param: rawCode:str - command, data, or client code string. 
-    def translateCode(self, rawCode:str, whichDict:str='datacode', verbose:bool=False, asValue:bool=False, lineNumber:int=1) ->str:
+    def lookupCode(self, rawCode:str, whichDict:str='datacode', asValue:bool=False, lineNumber:int=1) ->str:
         translated_code = rawCode
         value           = ''
         if whichDict == 'commandcode':
@@ -152,13 +158,16 @@ class Hist:
             translated_code = self.data_codes.get(rawCode)
             if not translated_code:
                 translated_code = f"{rawCode}"
-                if verbose:
-                    sys.stderr.write(f"* warning: on line {lineNumber}, '{rawCode}' is an unrecognized data code.\n")
+                if translated_code:
+                    if lineNumber in self.missing_data_codes:
+                        if not rawCode in self.missing_data_codes.get(lineNumber):
+                            self.missing_data_codes[lineNumber] = f"{self.missing_data_codes[lineNumber]},{rawCode}"
+                    else:
+                        self.missing_data_codes[lineNumber] = rawCode
         elif whichDict == 'clientcode':
             translated_code = self.hold_client_table.get(rawCode)
         else:
-            if verbose:
-                sys.stderr.write(f"* warning: on line {lineNumber}, invalid lookup for {rawCode} in table {whichDict}\n")
+            sys.stderr.write(f"* warning: on line {lineNumber}, invalid lookup for {rawCode} in table {whichDict}\n\n")
         if asValue:
             return value
         # If get failed on any of the above dictionaries send back a cleaned version of the code.
@@ -168,29 +177,27 @@ class Hist:
 
     # Converts a single line of a hist file into JSON. 
     # param: data:list - string fields from the line of hist. 
-    # param: line_no:int - the current line of the hist file. 
-    # param: verbose:bool - True will output warnings about missing data code translations. 
-    #   False will output fewer messages.  
-    def convertLogEntry(self, data:list, line_no:int, verbose=False):
+    # param: line_no:int - the current line of the hist file.  
+    def convertLogEntry(self, data:list, line_no:int):
         # E202303231010243024R ^S00hEFWCALCIRC^FFCIRC^FEEPLCAL^FcNONE^dC19^**tJ2371230**^**tL55**^**IS1**^**HH41224719**^nuEPLRIV^nxHOLD^nrY^Fv2147483647^^O
         # Where the following fields are                                       cat_key     seq_no   copy_no   hold_key  
         record = {}
         record['timestamp'] = self.toDate(data[0])  # 'E202301180024483003R' => '20230118002448'
         err_count = 0
-        record['command_code'] = self.translateCode(data[1], whichDict='commandcode', verbose=verbose, lineNumber=line_no)
+        record['command_code'] = self.lookupCode(data[1], whichDict='commandcode', lineNumber=line_no)
         if not record.get('command_code'):
             err_count += 1
-            sys.stderr.write(f"*error on line {line_no}, missing command_code!\n")
+            sys.stderr.write(f"*error on line {line_no}, missing command_code!\n\n")
             return (err_count, record)
         # Capture 'hE' transit item data codes for cat key, call seq, and copy number. 
         item_key = []
         # Convert all data codes, or report those that are not defined.
         for field in data[2:]:
-            data_code = self.translateCode(field, verbose=verbose, lineNumber=line_no)
+            data_code = self.lookupCode(field, lineNumber=line_no)
             # Don't process empty data fields '^^' or EOL '0' or 'O0'.
             if len(data_code) < 2 or data_code == 'O0':
                 continue
-            value = self.translateCode(field, verbose=verbose, asValue=True, lineNumber=line_no)
+            value = self.lookupCode(field, asValue=True, lineNumber=line_no)
             if len(data_code) == 2:
                 data_code = f"data_code_{data_code}"
                 record[data_code] = value
@@ -214,7 +221,7 @@ class Hist:
                 if item_key:
                     item_key.append(value)
                     _item_key_ = '|'.join(item_key)
-                    barcode = self.lookupItemId(f"{_item_key_}|")
+                    barcode = self.__lookup_item_id__(f"{_item_key_}|")
                     if barcode:
                         data_code = "item_id"
                         value = barcode
@@ -222,7 +229,7 @@ class Hist:
             elif re.match(r'entry_or_tag_data', data_code):
                 value = value[2:]
             elif re.match(r'client_type', data_code):
-                value = self.translateCode(value, whichDict='clientcode', verbose=verbose, lineNumber=line_no)
+                value = self.lookupCode(value, whichDict='clientcode', lineNumber=line_no)
             record[data_code] = value
         if record['command_code'] == "Discharge Item" and not record.get('date_of_discharge'):
             # Discharge item with no 'CO', 'date_of_discharge'.
@@ -233,15 +240,13 @@ class Hist:
     def toJson(self, histFile:str=None, outFile:str=None, mongoDb:bool=False):
         if not histFile:
             return
-        # TODO: remove tricky path handling for hist files.
-        # hist_file     = path.join(log_dir, 'Hist', histFile)
-        hist_file = histFile
-        is_compressed_hist = True
+        hist_file = path.join(log_dir, 'Hist', histFile)
         if not path.isfile(hist_file):
-            sys.stderr.write(f"**error, no such file {hist_file}.\n")
+            sys.stderr.write(f"**error, no such file {hist_file}.\n\n")
             sys.exit()
         print(f"hist_file     :{self.hist_file      }")
         # test if the file is a zipped history file. They are named '*.Z'.
+        is_compressed_hist = True
         if not hist_file.endswith('.Z'):
             is_compressed_hist = False
         hist_log_list = []
@@ -259,13 +264,11 @@ class Hist:
         else: # Not a zipped history file
             f = open(self.hist_file, mode='r', encoding=self.encoding)
         # Process each of the lines.
-        line_no = 0
-        missing_data_codes = 0
         for line in f:
-            line_no += 1
+            self.line_count += 1
             fields = line.strip().split('^')
             (errors, record) = self.convertLogEntry(fields, line_no)
-            missing_data_codes += errors
+            self.errors += errors
             # Append to list if output JSON proper
             if not mongoDb:
                 hist_log_list.append(record)
@@ -280,62 +283,143 @@ class Hist:
     # case the ../test directory will be searched for command
     # code, data code, and item lists. The application will 
     # then expect to find the test hist file in ../test/Hist.   
-    def readConfiguredCommandCodes(self):
-        if not path.exists(self.cmd_code_path):
-            msg = f"The file {self.cmd_code_path} was not found."
-            raise FileNotFoundError(msg)
-        with open(self.cmd_code_path, mode='r', encoding=self.encoding) as f:
-            for line in f:
-                self.addToDictionary(line, self.cmd_codes, underscore=False)
+    def setCommandCodes(self, commandCodes=None):
+        if isinstance(commandCodes, dict):
+            self.cmd_codes.update(commandCodes)
+        elif isinstance(commandCodes, str):
+            if self.is_ils:
+                translated_cmd_codes = self.translate(commandCodes, False)
+                if not translated_cmd_codes:
+                    sys.stderr.write(f"*warning, commands will not be translated.\n")
+                    return
+            else:
+                translated_cmd_codes = commandCodes
+            with open(translated_cmd_codes, mode='r', encoding=self.encoding) as f:
+                for line in f:
+                    self.__addToDictionary__(line, self.cmd_codes, underscore=False)
+        else:
+            sys.stderr.write(f"*warning, commands will not be translated.\n")
+
+    # Opens, reads, and translates cmdcode and datacode file on ILS. 
+    # Assumption: the is_ils flag is True. 
+    # param: codeFile:str name of the command code file. 
+    def translate(self, codeFile:str, is_data_code=True) ->str:
+        if not codeFile or not path.exists(codeFile):
+            sys.stderr.write(f"*error, can't find code file '{codeFile}' required for translation.\n")
+            sys.stderr.write(f"  codes will appear in raw form in output.\n")
+            return
+        if not path.exists(self.translate_cmd):
+            sys.stderr.write(f"*error, can't find 'translate' app '{self.translate_cmd}' required for translation.\n")
+            sys.stderr.write(f"  codes will appear in raw form in output.\n")
+            return
+        # Test for the translate application on this server (ILS) 
+        # Create a temp file for the code file and open it for writing. 
+        translated_file = ''
+        if is_data_code:
+            translated_file = 'data_codes.translated'
+        else:
+            translated_file = 'cmd_codes.translated'
+
+        # Create the pipeline
+        cat_process = subprocess.Popen(["cat", f"{codeFile}"], stdout=subprocess.PIPE)
+        translate_process = subprocess.Popen([f"{self.translate_cmd}"], stdin=cat_process.stdout, stdout=subprocess.PIPE)
+
+        # Get the output
+        output = translate_process.communicate()[0]
+
+        with open(translated_file, mode='w', encoding='ISO-8859-1') as t:
+            t.writelines(output.decode())
+        t.close()
+        return translated_file
 
     # Reads the data codes from the system datacode file in the Unicorn 
     # directory, or if debug is used in the constructor, from the datacode
-    # file in the test directory.  
-    def readConfiguredDataCodes(self):
-        if not path.exists(self.data_code_path):
-            msg = f"The file {self.data_code_path} was not found."
-            raise FileNotFoundError(msg)
-        with open(self.data_code_path, mode='r', encoding=self.encoding) as f:
-            for line in f:
-                self.addToDictionary(line, self.data_codes, underscore=True)
+    # file in the test directory. 
+    # param: dataCodes:dict|str - Optional, if a dictionary is passed the 
+    #   contents will be appended to the existing dict of data codes. Note 
+    #   that any duplicate keys will be clobbered by the arguments keys. 
+    #   If dataCodes is a string, it is assumed to be a path to a file that
+    #   contains a list of dataCodes, otherwise if None provided the data
+    #   codes are assumed to have been supplied in the constructor.  
+    def setDataCodes(self, dataCodes=None):
+        if isinstance(dataCodes, dict):
+            for key, value in dataCodes.items():
+                # Normally we could just update the dict but we need to 
+                # convert spaces to underscores.
+                self.data_codes[key] = self.cleanString(value, underscore=True)
+        elif isinstance(dataCodes, str):
+            with open(dataCodes, mode='r', encoding=self.encoding) as f:
+                for line in f:
+                    self.__addToDictionary__(line, self.data_codes, underscore=True)
+        else:
+            if self.is_ils:
+                # Go to the Unicorn directory and open the expected file.abs
+                with open(translated_cmd_codes, mode='r', encoding=self.encoding) as f:
+                    for line in f:
+                        self.__addToDictionary__(line, self.cmd_codes, underscore=False)
+            else:
+                sys.stderr.write(f"*warning, data codes will not be translated.\n")
+
 
     # Converts 'selitem -oIB' output to a dictionary where the key is the item ID 
     # and the stored value is the associated bar code for the item.  
-    # param: line:str - output line from selitem -oIB untouched. 
-    # return: 1 
+    # param: line:str - output line from selitem -oIB untouched.  
     def readBarCodes(self, barCodeFile:str):
-        if not path.exists(barCodeFile):
-            msg = f"The file {barCodeFile} was not found."
-            raise FileNotFoundError(msg)
-        with open(barCodeFile, mode='r', encoding=self.encoding) as f:
-            for line in f:
-                # Input line should look like '12345|55|1|31221012345678|' Straight from selitem -oIB
-                ck_cs_cn_bc = line.split('|')
-                if len(ck_cs_cn_bc) < 4:
-                    errors += 1
-                # clean the definition of special characters.
-                item_key = f"{ck_cs_cn_bc[0]}|{ck_cs_cn_bc[1]}|{ck_cs_cn_bc[2]}|"
-                item_id = ck_cs_cn_bc[3].rstrip()
-                self.bar_codes[item_key] = item_id
+        if path.exists(barCodeFile):
+            with open(barCodeFile, mode='r', encoding=self.encoding) as f:
+                for line in f:
+                    # Input line should look like '12345|55|1|31221012345678|' Straight from selitem -oIB
+                    ck_cs_cn_bc = line.split('|')
+                    if len(ck_cs_cn_bc) < 4:
+                        errors += 1
+                    # clean the definition of special characters.
+                    item_key = f"{ck_cs_cn_bc[0]}|{ck_cs_cn_bc[1]}|{ck_cs_cn_bc[2]}|"
+                    item_id = ck_cs_cn_bc[3].rstrip()
+                    self.bar_codes[item_key] = item_id
+        else:
+            print(f"*warning: expected '{barCodeFile}' to be a file.")
 
-    # Reads the client code table. The table contains the definitions 
-    # used by Symphony for translating client codes into human-readable 
-    # client type values, like 'BC_MOBILE', 'BC_CIRC' etc. This method 
-    # is typically called from the constructor when the calling application
-    # starts. 
-    # param: clientFile:str - path to the client file. 
-    def readClientCodes(self, clientFile:str):
-        if path.isfile(clientFile) == False:
-            sys.stderr.write(f"**error, no such client file {clientFile}.\n")
-            sys.exit()
-        try:
-            with open(clientFile, mode='r') as j_clients:
-                self.hold_client_table = json.load(j_clients)
-        except:
-            sys.stderr.write(f"**error while reading JSON from {clientFile}.\n")
-            sys.exit()
+    # Reads the hold client code table. The table contains the human-readable 
+    # types of clients that can place holds on a Symphony system, like 
+    # 'BC_MOBILE', 'BC_CIRC' etc. This method is called from the constructor 
+    # when the calling application starts. 
+    # param: clientCodes - Path or dictionary of hold clients. 
+    def setClientCodes(self, clientCodes):
+        if isinstance(clientCodes, dict):
+            self.hold_client_table.update(clientCodes)
+            return
+        if isinstance(clientCodes, str):
+            if path.exists(clientCodes):
+                with open(clientCodes, mode='r', encoding=self.encoding) as f:
+                    for line in f:
+                        self.__addToDictionary__(line, self.hold_client_table, underscore=True)
+        else:
+            self.hold_client_table = {
+                '0': 'CLIENT_UNKNOWN',
+                '1': 'CLIENT_WEBCAT',
+                '2': 'CLIENT_3MSERVER',
+                '3': 'CLIENT_WORKFLOWS',
+                '4': 'CLIENT_INFOVIEW',
+                '5': 'CLIENT_ONLINE_CATALOG',
+                '6': 'CLIENT_SIP2',
+                '7': 'CLIENT_NCIP',
+                '8': 'CLIENT_SVA',
+                '9': 'CLIENT_WEB_STAFF',
+                '10': 'CLIENT_POCKET_CIRC',
+                '11': 'CLIENT_WS_PATRON',
+                '12': 'CLIENT_WS_BOOKMYNE',
+                '13': 'CLIENT_WS_DS',
+                '14': 'CLIENT_WS_STAFF',
+                '15': 'BC_PAC',
+                '16': 'BC_CAT',
+                '17': 'BOOKMYNE_P',
+                '18': 'SOCIAL_LIB',
+                '19': 'MOBLCIRC_S',
+                '20': 'BC_CIRC',
+                '21': 'BC_ACQ',
+                '22': 'BC_MOBILE'
+            }            
         
-
     # Some data codes don't have definitions in the vendor-supplied datacode file. 
     # This method allows you to add or update better definitions or translations. 
     # param: dataCodes:dict|str - new data code definitions to add to, and or clobber existing
@@ -347,10 +431,10 @@ class Hist:
             if isinstance(dataCodes, dict):
                 for key, value in dataCodes.items():
                     entry = f"{key}|{value}"
-                    self.addToDictionary(entry, self.data_codes, underscore=True)
+                    self.__addToDictionary__(entry, self.data_codes, underscore=True)
             elif isinstance(dataCodes, str):
                 entry = dataCodes
-                self.addToDictionary(entry, self.data_codes, underscore=True)
+                self.__addToDictionary__(entry, self.data_codes, underscore=True)
 
     # Helper function that, given a string of a Symphony command code or 
     # data code, and its english translation separated by a pipe, loads 
@@ -359,7 +443,7 @@ class Hist:
     # param: dictionary:dict destination storage of the key value pair. 
     # param: underscore:bool by default all spaces will also be converted 
     #   to underscores. False will turn off this feature. 
-    def addToDictionary(self, line:str, dictionary:dict, underscore:bool):
+    def __addToDictionary__(self, line:str, dictionary:dict, underscore:bool):
         key_value = line.split('|')
         # clean the definition of special characters.
         key = key_value[0]
