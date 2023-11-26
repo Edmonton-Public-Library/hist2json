@@ -33,24 +33,24 @@ hold_clients len:23
 bar_codes read  :10
 
 
-#   Test convertLogEntry()
-#   ----------------------
-#   >>> data = "E202310100510083031R ^S01EVFFADMIN^FEEPLRIV^FcNONE^NQ31221112079020^^O00049".split('^')
-#   >>> hist.convertLogEntry(data, 1)
-#   (0, {'timestamp': '2023-10-10 05:10:08', 'command_code': 'Discharge Item', 'station_library': 'RIV', 'station_login_clearance': 'NONE', 'item_id': '31221112079020', 'date_of_discharge': '2023-10-10'})
-#   >>> h = [
-#   ... "E202304110001112995R ^S05IYFWOVERDRIVE^FEEPLMNA^FFSIPCHK^FcNONE^FDSIPCHK^dC6^UO21221020087836^UK4/11/2023^OAY^^O^O0",
-#   ... "E202304110001162995R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLRIV^UO21221023395855^Uf0490^NQ31221059760525^HB04/11/2024^HKTITLE^HOEPLRIV^dC5^^O00112^zZProblem^O0"
-#   ... ]
-#   >>> line_no = 1
-#   >>> for h_line in h:
-#   ...     (err, rec) = hist.convertLogEntry(h_line.split('^'), line_no)
-#   ...     print(f"{rec}")
-#   ...     line_no += 1
-#   {'timestamp': '2023-04-11 00:01:11', 'command_code': 'Edit User Part B', 'station_library': 'MNA', 'station_login_user_access': 'SIPCHK', 'station_login_clearance': 'NONE', 'station': 'SIPCHK', 'client_type': 'CLIENT_SIP2', 'user_id': '21221020087836', 'user_last_activity': '2023-04-11', 'user_edit_override': 'Y'}
-#   {'timestamp': '2023-04-11 00:01:16', 'command_code': 'Create Hold', 'station_login_clearance': 'NONE', 'station_library': 'RIV', 'user_id': '21221023395855', 'user_pin': 'xxxxx', 'item_id': '31221059760525', 'date_hold_expires': '2024-04-11', 'hold_type': 'TITLE', 'hold_pickup_library': 'RIV', 'client_type': 'CLIENT_ONLINE_CATALOG', 'data_code_zZ': 'Problem'}
-#   >>> hist.getMissingDataCodes()
-#   {1: 'O0', 2: 'O0,zZ'}
+Test convertLogEntry()
+----------------------
+>>> data = "E202310100510083031R ^S01EVFFADMIN^FEEPLRIV^FcNONE^NQ31221112079020^^O00049".split('^')
+>>> hist.convertLogEntry(data, 1)
+(0, {'timestamp': '2023-10-10 05:10:08', 'command_code': 'Discharge Item', 'station_library': 'RIV', 'station_login_clearance': 'NONE', 'item_id': '31221112079020', 'date_of_discharge': '2023-10-10'})
+>>> h = [
+... "E202304110001112995R ^S05IYFWOVERDRIVE^FEEPLMNA^FFSIPCHK^FcNONE^FDSIPCHK^dC6^UO21221020087836^UK4/11/2023^OAY^^O^O0",
+... "E202304110001162995R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLRIV^UO21221023395855^Uf0490^NQ31221059760525^HB04/11/2024^HKTITLE^HOEPLRIV^dC5^^O00112^zZProblem^O0"
+... ]
+>>> line_no = 1
+>>> for h_line in h:
+...     (err, rec) = hist.convertLogEntry(h_line.split('^'), line_no)
+...     print(f"{rec}")
+...     line_no += 1
+{'timestamp': '2023-04-11 00:01:11', 'command_code': 'Edit User Part B', 'station_library': 'MNA', 'station_login_user_access': 'SIPCHK', 'station_login_clearance': 'NONE', 'station': 'SIPCHK', 'client_type': 'CLIENT_SIP2', 'user_id': '21221020087836', 'user_last_activity': '2023-04-11', 'user_edit_override': 'Y'}
+{'timestamp': '2023-04-11 00:01:16', 'command_code': 'Create Hold', 'station_login_clearance': 'NONE', 'station_library': 'RIV', 'user_id': '21221023395855', 'user_pin': 'xxxxx', 'item_id': '31221059760525', 'date_hold_expires': '2024-04-11', 'hold_type': 'TITLE', 'hold_pickup_library': 'RIV', 'client_type': 'CLIENT_ONLINE_CATALOG', 'data_code_zZ': 'Problem'}
+>>> hist.getMissingDataCodes()
+{1: 'O0', 2: 'O0,zZ'}
 
 
 
@@ -113,8 +113,8 @@ dict_keys(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '
 
 
 
-   Test the hist.convertLogEntry() method.
-   ------------------------------------
+Test the hist.convertLogEntry() method.
+------------------------------------
 
 >>> hist.data_codes['FF']
 'station_login_user_access'
