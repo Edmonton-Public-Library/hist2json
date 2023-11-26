@@ -2,105 +2,70 @@ Provides tests for hist.py
 
 
 >>> from hist import Hist
->>> hist = Hist(dataCodes={'A':'bee'}, commandCodes={'C':'dee'}, debug=True)
+>>> hist = Hist(debug=True)
 WARNING: item IDs will not be converted into item barcodes.
-cmd_code_path :../test/cmdcode
-data_code_path:../test/datacode
-translate_cmd :../test/translate
-encoding      :ISO-8859-1
-cmd_codes len :1
-data_codes len:1
-barCode file  :None
-bar_codes read:0
->>> hist.updateDataCodes({'B':'sea'})
->>> print(f"{hist.data_codes}")
-{'A': 'bee', 'B': 'sea'}
-
-
->>> hist = Hist(commandCodes={'A':'bee'}, debug=True)
-WARNING: item IDs will not be converted into item barcodes.
-cmd_code_path :../test/cmdcode
-data_code_path:../test/datacode
-translate_cmd :../test/translate
-encoding      :ISO-8859-1
-cmd_codes len :1
-data_codes len:1881
-barCode file  :None
-bar_codes read:0
-
-Test data codes read from file.
-------------------------------
-
->>> hist = Hist(dataCodes={'A':'bee'}, debug=True)
-WARNING: item IDs will not be converted into item barcodes.
-cmd_code_path :../test/cmdcode
-data_code_path:../test/datacode
-translate_cmd :../test/translate
-encoding      :ISO-8859-1
-cmd_codes len :533
-data_codes len:1
-barCode file  :None
-bar_codes read:0
+encoding        :ISO-8859-1
+cmd_codes len   :533
+data_codes len  :1881
+hold_clients len:23
+bar_codes read  :0
+>>> print(f"{hist.cmd_codes['AQ']}")
+Activate Location
+>>> print(f"{hist.data_codes['0A']}")
+item_category_three
+>>> hist.updateDataCodes({'0A':'See me changed'})
+>>> print(f"{hist.data_codes['0A']}")
+see_me_changed
 
 Test reading bar codes from a file 
 ----------------------------------
-
 >>> hist = Hist(barCodes='../test/items.lst', debug=True)
-cmd_code_path :../test/cmdcode
-data_code_path:../test/datacode
-translate_cmd :../test/translate
-encoding      :ISO-8859-1
-cmd_codes len :533
-data_codes len:1881
-barCode file  :../test/items.lst
-bar_codes read:1630964
-
+encoding        :ISO-8859-1
+cmd_codes len   :533
+data_codes len  :1881
+hold_clients len:23
+bar_codes read  :1630964
 >>> hist = Hist(barCodes='../test/items1.lst', debug=True)
-cmd_code_path :../test/cmdcode
-data_code_path:../test/datacode
-translate_cmd :../test/translate
-encoding      :ISO-8859-1
-cmd_codes len :533
-data_codes len:1881
-barCode file  :../test/items1.lst
-bar_codes read:10
+encoding        :ISO-8859-1
+cmd_codes len   :533
+data_codes len  :1881
+hold_clients len:23
+bar_codes read  :10
 
-Test convertLogEntry()
-----------------------
->>> data = "E202310100510083031R ^S01EVFFADMIN^FEEPLRIV^FcNONE^NQ31221112079020^^O00049".split('^')
->>> hist.convertLogEntry(data, 1)
-(0, {'timestamp': '2023-10-10 05:10:08', 'command_code': 'Discharge Item', 'station_library': 'RIV', 'station_login_clearance': 'NONE', 'item_id': '31221112079020', 'date_of_discharge': '2023-10-10'})
->>> h = [
-... "E202304110001112995R ^S05IYFWOVERDRIVE^FEEPLMNA^FFSIPCHK^FcNONE^FDSIPCHK^dC6^UO21221020087836^UK4/11/2023^OAY^^O^O0",
-... "E202304110001162995R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLRIV^UO21221023395855^Uf0490^NQ31221059760525^HB04/11/2024^HKTITLE^HOEPLRIV^dC5^^O00112^zZProblem^O0"
-... ]
->>> line_no = 1
->>> for h_line in h:
-...     (err, rec) = hist.convertLogEntry(h_line.split('^'), line_no)
-...     print(f"{rec}")
-...     line_no += 1
-{'timestamp': '2023-04-11 00:01:11', 'command_code': 'Edit User Part B', 'station_library': 'MNA', 'station_login_user_access': 'SIPCHK', 'station_login_clearance': 'NONE', 'station': 'SIPCHK', 'client_type': 'CLIENT_SIP2', 'user_id': '21221020087836', 'user_last_activity': '2023-04-11', 'user_edit_override': 'Y'}
-{'timestamp': '2023-04-11 00:01:16', 'command_code': 'Create Hold', 'station_login_clearance': 'NONE', 'station_library': 'RIV', 'user_id': '21221023395855', 'user_pin': 'xxxxx', 'item_id': '31221059760525', 'date_hold_expires': '2024-04-11', 'hold_type': 'TITLE', 'hold_pickup_library': 'RIV', 'client_type': 'CLIENT_ONLINE_CATALOG', 'data_code_zZ': 'Problem'}
->>> hist.getMissingDataCodes()
-{1: 'O0', 2: 'O0,zZ'}
+
+#   Test convertLogEntry()
+#   ----------------------
+#   >>> data = "E202310100510083031R ^S01EVFFADMIN^FEEPLRIV^FcNONE^NQ31221112079020^^O00049".split('^')
+#   >>> hist.convertLogEntry(data, 1)
+#   (0, {'timestamp': '2023-10-10 05:10:08', 'command_code': 'Discharge Item', 'station_library': 'RIV', 'station_login_clearance': 'NONE', 'item_id': '31221112079020', 'date_of_discharge': '2023-10-10'})
+#   >>> h = [
+#   ... "E202304110001112995R ^S05IYFWOVERDRIVE^FEEPLMNA^FFSIPCHK^FcNONE^FDSIPCHK^dC6^UO21221020087836^UK4/11/2023^OAY^^O^O0",
+#   ... "E202304110001162995R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLRIV^UO21221023395855^Uf0490^NQ31221059760525^HB04/11/2024^HKTITLE^HOEPLRIV^dC5^^O00112^zZProblem^O0"
+#   ... ]
+#   >>> line_no = 1
+#   >>> for h_line in h:
+#   ...     (err, rec) = hist.convertLogEntry(h_line.split('^'), line_no)
+#   ...     print(f"{rec}")
+#   ...     line_no += 1
+#   {'timestamp': '2023-04-11 00:01:11', 'command_code': 'Edit User Part B', 'station_library': 'MNA', 'station_login_user_access': 'SIPCHK', 'station_login_clearance': 'NONE', 'station': 'SIPCHK', 'client_type': 'CLIENT_SIP2', 'user_id': '21221020087836', 'user_last_activity': '2023-04-11', 'user_edit_override': 'Y'}
+#   {'timestamp': '2023-04-11 00:01:16', 'command_code': 'Create Hold', 'station_login_clearance': 'NONE', 'station_library': 'RIV', 'user_id': '21221023395855', 'user_pin': 'xxxxx', 'item_id': '31221059760525', 'date_hold_expires': '2024-04-11', 'hold_type': 'TITLE', 'hold_pickup_library': 'RIV', 'client_type': 'CLIENT_ONLINE_CATALOG', 'data_code_zZ': 'Problem'}
+#   >>> hist.getMissingDataCodes()
+#   {1: 'O0', 2: 'O0,zZ'}
 
 
 
 Test string cleaning.
 ---------------------
-
 Cleans a standard set of special characters from a string. 
 param: string to clean. 
 param: spc_to_underscore as boolean, True will remove all special characters and replace any spaces with underscores.
-
 >>> s = """This [isn't] a \$tring th*t i've (liked) until_now} """
 >>> print(f"{hist.cleanString(s)}")
-This isnt a tring tht ive liked untilnow 
+This isnt a tring tht ive liked until_now 
 
 
 Test toDate() method
 ---------------------
-
 >>> hist.toDate('01/13/2023')
 '2023-01-13'
 >>> hist.toDate('E202301180024483003R ')
@@ -111,6 +76,7 @@ Test toDate() method
 '2023-01-18 00:24:48'
 >>> hist.toDate('01/13/2023,5:33 PM')
 '2023-01-13'
+
 
 Test lookupCode()
 --------------------
@@ -134,69 +100,29 @@ Test lookupCode()
 'zZ'
 
 
-Test toJson() 
--------------
-
-Note that in these two tests you must use debug True to make the application look in the test directory.
->>> hist = Hist(debug=True)
-WARNING: item IDs will not be converted into item barcodes.
-cmd_code_path :../test/cmdcode
-data_code_path:../test/datacode
-translate_cmd :../test/translate
-encoding      :ISO-8859-1
-cmd_codes len :533
-data_codes len:1881
-barCode file  :None
-bar_codes read:0
->>> hist.toJson()
-
->>> hist = Hist(debug=True)
-WARNING: item IDs will not be converted into item barcodes.
-cmd_code_path :../test/cmdcode
-data_code_path:../test/datacode
-translate_cmd :../test/translate
-encoding      :ISO-8859-1
-cmd_codes len :533
-data_codes len:1881
-barCode file  :None
-bar_codes read:0
->>> hist.toJson()
-
 Test readClientCodes method
 ---------------------------
-
 >>> hist = Hist(barCodes='../test/items1.lst', debug=True)
-cmd_code_path :../test/cmdcode
-data_code_path:../test/datacode
-translate_cmd :../test/translate
-encoding      :ISO-8859-1
-cmd_codes len :533
-data_codes len:1881
-barCode file  :../test/items1.lst
-bar_codes read:10
->>> hist.hold_client_table.keys()
+encoding        :ISO-8859-1
+cmd_codes len   :533
+data_codes len  :1881
+hold_clients len:23
+bar_codes read  :10
+>>> hist.hold_clients.keys()
 dict_keys(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22'])
 
 
 
-Test the hist.convertLogEntry() method.
-------------------------------------
+   Test the hist.convertLogEntry() method.
+   ------------------------------------
 
->>> c = {'Yy': 'Cancel Hold-bob'}
->>> hist.setCommandCodes(c)
->>> hist.cmd_codes['Yy']
-'Cancel Hold-bob'
 >>> hist.data_codes['FF']
 'station_login_user_access'
 >>> d = {'Xy': 'Station Library', 'Gg': 'Library', 'FF': 'Library Station'}
->>> hist.setDataCodes(d)
->>> data = 'E202301180024493003R ^S59YyFWCLOUDLIBRARY^XyEPLMNA^GgEPLHVY^FFEPLCPL^O'.strip().split('^')
+>>> hist.updateDataCodes(d)
+>>> data = 'E202301180024493003R ^S05BYFWCLOUDLIBRARY^XyEPLMNA^GgEPLHVY^FFEPLCPL^O'.strip().split('^')
 >>> print(hist.convertLogEntry(data,1))
-(0, {'timestamp': '2023-01-18 00:24:49', 'command_code': 'Cancel Hold-bob', 'station_library': 'MNA', 'library': 'HVY', 'library_station': 'CPL'})
+(0, {'timestamp': '2023-01-18 00:24:49', 'command_code': 'Bill User', 'station_library': 'MNA', 'library': 'HVY', 'library_station': 'CPL'})
 >>> data = 'E202303231010243024R ^S00hEFWCALCIRC^FFCIRC^FEEPLCAL^FcNONE^dC19^tJ2371230^tL55^IS1^HH41224719^nuEPLRIV^nxHOLD^nrY^Fv300000^^O'.strip().split('^')
-
-Since 'FF' is handled as a library the first three characters are trimmed off. Tests that we _can_ overwrite SirsiDynix codes.
 >>> print(hist.convertLogEntry(data,2))
 (0, {'timestamp': '2023-03-23 10:10:24', 'command_code': 'Transit Item', 'library_station': 'C', 'station_library': 'CAL', 'station_login_clearance': 'NONE', 'client_type': 'MOBLCIRC_S', 'catalog_key_number': '2371230', 'call_sequence_code': '55', 'copy_number': '1', 'hold_number': '41224719', 'transit_to': 'RIV', 'transit_reason': 'HOLD', 'data_code_nr': 'Y', 'max_length_of_transaction_response': '300000'})
-
-

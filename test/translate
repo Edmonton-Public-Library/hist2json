@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# Read input from stdin and print it to stdout
+while read -r line; do
+  echo "$line"
+done
