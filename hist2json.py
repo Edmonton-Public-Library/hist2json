@@ -48,7 +48,7 @@ import subprocess
 # E202301180001403066R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLWHP^UO21221027661047^UfIlovebigb00ks^NQ31221108836540^HB01/18/2024^HKTITLE^HOEPLLHL^dC5^^O00121
 # 
 # Added hostname detection for data and cmd code files.
-VERSION = "2.00.00"
+VERSION = "2.00.01"
 # When reading data codes and command codes, assume the default location on the ILS,
 # otherwise the datacode and cmdcode file in lib is used. This is done for testing
 # purposes.
@@ -249,12 +249,12 @@ class Hist:
             json_file = outFile
         ## Process the history log into JSON.
         # Open the json file ready for output.
-        j = open(json_file, mode='w', encoding=self.encoding)
+        j = open(json_file, mode='wt', encoding=self.encoding)
         # History file handle; either gzipped or regular text.
         if is_compressed_hist:
             f = gzip.open(histFile, mode='rt', encoding=self.encoding)
         else: # Not a zipped history file
-            f = open(histFile, mode='r', encoding=self.encoding)
+            f = open(histFile, mode='rt', encoding=self.encoding)
         # Process each of the lines.
         for line in f:
             self.line_count += 1
@@ -290,7 +290,7 @@ class Hist:
         cat_process = subprocess.Popen(["cat", f"{codeFile}"], stdout=subprocess.PIPE)
         translate_process = subprocess.Popen([f"{self.translate_cmd}"], stdin=cat_process.stdout, stdout=subprocess.PIPE)
         for line in translate_process.stdout:
-            ct = line.split('|')
+            ct = line.decode().split('|')
             if not ct or len(ct) < 2:
                 continue
             code = ct[0]
@@ -320,7 +320,7 @@ class Hist:
     def readBarCodes(self, barCodeFile:str):
         bar_codes = {}
         if exists(barCodeFile):
-            with open(barCodeFile, mode='r', encoding=self.encoding) as f:
+            with open(barCodeFile, mode='rt', encoding=self.encoding) as f:
                 for line in f:
                     # Input line should look like '12345|55|1|31221012345678|' Straight from selitem -oIB
                     ck_cs_cn_bc = line.split('|')
