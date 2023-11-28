@@ -288,7 +288,7 @@ class Hist:
             return cmd_dict
         # Symphony's translate command passes previously translated material without issue.
         cat_process = subprocess.Popen(["cat", f"{codeFile}"], stdout=subprocess.PIPE)
-        translate_process = subprocess.Popen([f"{self.translate_cmd}"], stdin=cat_process.stdout, stdout=subprocess.PIPE, text=True)
+        translate_process = subprocess.Popen([f"{self.translate_cmd}"], stdin=cat_process.stdout, stdout=subprocess.PIPE)
         for line in translate_process.stdout:
             ct = line.split('|')
             if not ct or len(ct) < 2:
