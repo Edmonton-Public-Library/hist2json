@@ -70,7 +70,6 @@ class Hist:
         self.is_ils         = exists(HOME)
         self.line_count     = 0
         self.errors         = 0
-        # self.data_code_path = f"{self.gpn('custom')}/datacode"
         self.translate_cmd  = f"{self.gpn('bin')}/translate"
         self.encoding       = encoding
         self.cmd_codes      = self.readCodeFile(f"{self.gpn('custom')}/cmdcode")
@@ -79,7 +78,7 @@ class Hist:
         if clientCodes:
             self.hold_clients = self.readCodeFile(clientCodes)
         else:
-            self.hold_clients = self.readCodeFile(f"{self.gpn('custom')}/holdclient")
+            self.hold_clients = self.readCodeFile(f"{self.gpn('custom')}/hold_client_table.lst")
         # Can specify a dict of IDs and barcodes for testing
         if barCodes:
             self.bar_codes = self.readBarCodes(barCodes)
