@@ -1,7 +1,7 @@
 Provides tests for hist.py
 
 
->>> from hist import Hist
+>>> from hist2json import Hist
 >>> hist = Hist(debug=True)
 WARNING: item IDs will not be converted into item barcodes.
 encoding        :ISO-8859-1
@@ -19,13 +19,13 @@ see_me_changed
 
 Test reading bar codes from a file 
 ----------------------------------
->>> hist = Hist(barCodes='../test/items.lst', debug=True)
+>>> hist = Hist(barCodes='test/items.lst', debug=True)
 encoding        :ISO-8859-1
 cmd_codes len   :533
 data_codes len  :1881
 hold_clients len:23
 bar_codes read  :1630964
->>> hist = Hist(barCodes='../test/items1.lst', debug=True)
+>>> hist = Hist(barCodes='test/items1.lst', debug=True)
 encoding        :ISO-8859-1
 cmd_codes len   :533
 data_codes len  :1881
@@ -102,7 +102,7 @@ Test lookupCode()
 
 Test readClientCodes method
 ---------------------------
->>> hist = Hist(barCodes='../test/items1.lst', debug=True)
+>>> hist = Hist(barCodes='test/items1.lst', debug=True)
 encoding        :ISO-8859-1
 cmd_codes len   :533
 data_codes len  :1881

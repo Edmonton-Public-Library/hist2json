@@ -19,13 +19,13 @@
 #
 ##############################################################
 import re
+from os import path
 from os.path import exists
 import sys
 import json
 import gzip
 from pathlib import Path
 from datetime import datetime
-import socket
 import subprocess
 
 ###
@@ -44,7 +44,8 @@ import subprocess
 ###
 # A replacement date Symphony's deep time 'NEVER' which won't do as a timestamp.
 NEVER = '2099-01-01'
-HOME = '/software/EDPL'
+HOME = '/software/EDPL/Unicorn'
+
 class Hist:
 
     # Constructor 
@@ -54,7 +55,7 @@ class Hist:
     # param: commandCodes - a dictionary or path to the cmdcode file. See debug switch for exceptions. 
     #   By default the application will look in the unicorn directory where Symphony normally keeps it.  
     # param: dataCodes 
-    def __init__(self, encoding:str='ISO-8859-1', barCodes=None, clientCodes=None, debug:bool=False):
+    def __init__(self, encoding:str='ISO-8859-1', barCodes:str=None, clientCodes:str=None, debug:bool=False):
         self.is_ils         = exists(HOME)
         self.line_count     = 0
         self.errors         = 0
@@ -64,22 +65,22 @@ class Hist:
         self.cmd_codes      = self.readCodeFile(f"{self.gpn('custom')}/cmdcode")
         self.data_codes     = self.readCodeFile(f"{self.gpn('custom')}/datacode", us=True)
         # Load the dictionary of the types of services that can place holds. Preserve underscores.
-        self.hold_clients   = self.readCodeFile(f"{self.gpn('custom')}/holdclients")
+        if clientCodes:
+            self.hold_clients = self.readCodeFile(clientCodes)
+        else:
+            self.hold_clients = self.readCodeFile(f"{self.gpn('custom')}/holdclient")
         # Can specify a dict of IDs and barcodes for testing
-        if isinstance(barCodes, dict):
-            self.bar_codes = barCodes
-        # More commonly specify a path to the selitem -oIB output file. 
-        elif isinstance(barCodes, str):
+        if barCodes:
             self.bar_codes = self.readBarCodes(barCodes)
         else:
             print(f"WARNING: item IDs will not be converted into item barcodes.")
-            self.bar_codes      = {}
+            self.bar_codes = {}
         self.missing_data_codes = {}
         if debug:
             print(f"encoding        :{self.encoding      }")
             print(f"cmd_codes len   :{self.getCommandCodeCount()}")
             print(f"data_codes len  :{self.getDataCodeCount()}")
-            print(f"hold_clients len:{len(self.hold_clients)}")
+            print(f"hold_clients len:{self.getHoldClientCount()}")
             print(f"bar_codes read  :{self.getBarCodeCount()}")
     
     # Acts like 'getpathname' in Symphony, that is, it attempts to resolve 
@@ -100,6 +101,9 @@ class Hist:
 
     def getLineCount(self) -> int:
         return self.line_count
+
+    def getHoldClientCount(self) -> int:
+        return len(self.hold_clients)
 
     def getCommandCodeCount(self) -> int:
         return len(self.cmd_codes)
@@ -145,7 +149,7 @@ class Hist:
         elif whichDict == 'clientcode':
             translated_code = self.hold_clients.get(rawCode)
         else:
-            sys.stderr.write(f"* warning: on line {lineNumber}, invalid lookup for {rawCode} in table {whichDict}\n\n")
+            print(f"* warning: on line {lineNumber}, invalid lookup for {rawCode} in table {whichDict}\n\n")
         if asValue:
             return value
         # If get failed on any of the above dictionaries send back a cleaned version of the code.
@@ -165,7 +169,7 @@ class Hist:
         record['command_code'] = self.lookupCode(data[1], whichDict='commandcode', lineNumber=line_no)
         if not record.get('command_code'):
             err_count += 1
-            sys.stderr.write(f"*error on line {line_no}, missing command_code!\n\n")
+            print(f"*error on line {line_no}, missing command_code!\n\n")
             return (err_count, record)
         # Capture 'hE' transit item data codes for cat key, call seq, and copy number. 
         item_key = []
@@ -218,19 +222,18 @@ class Hist:
     def toJson(self, histFile:str=None, outFile:str=None, mongoDb:bool=False):
         if not histFile:
             return
-        hist_file = path.join(log_dir, 'Hist', histFile)
-        if not path.isfile(hist_file):
-            sys.stderr.write(f"**error, no such file {hist_file}.\n\n")
+        if not path.isfile(histFile):
+            print(f"**error, no such file {histFile}.\n\n")
             sys.exit()
-        print(f"hist_file     :{self.hist_file      }")
+        print(f"histFile     :{histFile      }")
         # test if the file is a zipped history file. They are named '*.Z'.
         is_compressed_hist = True
-        if not hist_file.endswith('.Z'):
+        if not histFile.endswith('.Z'):
             is_compressed_hist = False
         hist_log_list = []
         if not outFile:
-            json_file = Path(self.hist_file).with_suffix('')
-            json_file = f"{self.hist_file}.json"
+            json_file = Path(histFile).with_suffix('')
+            json_file = f"{histFile}.json"
         else:
             json_file = outFile
         ## Process the history log into JSON.
@@ -238,14 +241,14 @@ class Hist:
         j = open(json_file, mode='w', encoding=self.encoding)
         # History file handle; either gzipped or regular text.
         if is_compressed_hist:
-            f = gzip.open(self.hist_file, mode='rt', encoding=self.encoding)
+            f = gzip.open(histFile, mode='rt', encoding=self.encoding)
         else: # Not a zipped history file
-            f = open(self.hist_file, mode='r', encoding=self.encoding)
+            f = open(histFile, mode='r', encoding=self.encoding)
         # Process each of the lines.
         for line in f:
             self.line_count += 1
             fields = line.strip().split('^')
-            (errors, record) = self.convertLogEntry(fields, line_no)
+            (errors, record) = self.convertLogEntry(fields, self.line_count)
             self.errors += errors
             # Append to list if output JSON proper
             if not mongoDb:
@@ -259,7 +262,7 @@ class Hist:
     # Reads and translates the command codes file from the Unicorn directory on the ILS
     # but otherwise the ../test directory on this machine. If the translate command is
     # available, it will be used to translate the file's contents, otherwise an empty
-    # dictionary is returned.
+    # dictionary is returned. Make sure the last line of files includes a newline. 
     # param: commandCode:str command code file. If a 'translate' app is not found the 
     #   contents will be used as is. This makes it conveinent to have a translated 
     #   version of symphony commands that can be augmented with additional or improved
@@ -269,9 +272,10 @@ class Hist:
     def readCodeFile(self, codeFile:str, us:bool=False, debug:bool=False) -> dict:
         cmd_dict = {}
         if not codeFile or not exists(codeFile):
-            sys.stderr.write(f"*error, can't find code file required for translated.\n")
-            sys.stderr.write(f"  command / data codes. Results will appear untranslated.\n")
-            return
+            print(f"*error, can't find code file {codeFile} required for translation.\n")
+            print(f"  command, data, or holdclient codes. Some Results will appear untranslated.\n")
+            return cmd_dict
+        # Symphony's translate command passes previously translated material without issue.
         cat_process = subprocess.Popen(["cat", f"{codeFile}"], stdout=subprocess.PIPE)
         translate_process = subprocess.Popen([f"{self.translate_cmd}"], stdin=cat_process.stdout, stdout=subprocess.PIPE, text=True)
         for line in translate_process.stdout:

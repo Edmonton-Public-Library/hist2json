@@ -1,5 +1,10 @@
+## Note
+**Files `holdclients`, `datacode`, and `cmdcode` must have a newline on the last line.**
+
 # TODO
-Fix discharge item that doesn't include date.
+* See if there is a holdclient file and change in code if necessary. **Done**, there doesn't seem to be a holdclient table, but a created one is provided in the `lib/` directory called `holdclient`.
+* Test if `translate` passes text that doesn't need translation without changes. **Done** things that don't need translating are not altered by translate.
+* Fix discharge item that doesn't include date. **Done**
 
 Example of discharge item with and without date.
 E202310100148422967R ^S61EVFWSMTCHTLHL1^FEEPLLHL^FFSMTCHT^FcNONE^FDSIPCHK^dC6^NQ31221120423970^CO10/10/2023,1:48^^O
