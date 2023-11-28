@@ -512,7 +512,10 @@ def main(argv):
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         import doctest
-        doctest.testfile("hist.tst")
+        if exists(HOME):
+            doctest.testfile("hist_prod.tst")
+        else:
+            doctest.testfile("hist.tst")
     else:
         main(sys.argv[1:])
 # EOF
