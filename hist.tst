@@ -126,3 +126,24 @@ Test the hist.convertLogEntry() method.
 >>> data = 'E202303231010243024R ^S00hEFWCALCIRC^FFCIRC^FEEPLCAL^FcNONE^dC19^tJ2371230^tL55^IS1^HH41224719^nuEPLRIV^nxHOLD^nrY^Fv300000^^O'.strip().split('^')
 >>> print(hist.convertLogEntry(data,2))
 (0, {'timestamp': '2023-03-23 10:10:24', 'command_code': 'Transit Item', 'library_station': 'C', 'station_library': 'CAL', 'station_login_clearance': 'NONE', 'client_type': 'MOBLCIRC_S', 'catalog_key_number': '2371230', 'call_sequence_code': '55', 'copy_number': '1', 'hold_number': '41224719', 'transit_to': 'RIV', 'transit_reason': 'HOLD', 'data_code_nr': 'Y', 'max_length_of_transaction_response': '300000'})
+
+
+Test that item discharge without dates get dates
+------------------------------------------------
+
+>>> hist = Hist(barCodes='test/items1.lst', debug=True)
+encoding        :ISO-8859-1
+cmd_codes len   :533
+data_codes len  :1881
+hold_clients len:23
+bar_codes read  :10
+
+With a discharge date.
+>>> data = 'E202310100148422967R ^S61EVFWSMTCHTLHL1^FEEPLLHL^FFSMTCHT^FcNONE^FDSIPCHK^dC6^NQ31221120423970^CO10/10/2023,1:48^^O'.split('^')
+>>> print(hist.convertLogEntry(data,1))
+(0, {'timestamp': '2023-10-10 01:48:42', 'command_code': 'Discharge Item', 'station_library': 'LHL', 'station_login_user_access': 'SMTCHT', 'station_login_clearance': 'NONE', 'station': 'SIPCHK', 'client_type': 'CLIENT_SIP2', 'item_id': '31221120423970', 'date_of_discharge': '2023-10-10'})
+
+Here is a discharge without a discharge date.
+>>> data = 'E202310100510083031R ^S01EVFFADMIN^FEEPLRIV^FcNONE^NQ31221112079020^^O00049'.split('^')
+>>> print(hist.convertLogEntry(data,2))
+(0, {'timestamp': '2023-10-10 05:10:08', 'command_code': 'Discharge Item', 'station_library': 'RIV', 'station_login_clearance': 'NONE', 'item_id': '31221112079020', 'date_of_discharge': '2023-10-10'})
