@@ -4,7 +4,7 @@
 # Purpose: Transform Symphony history records into JSON.
 #          See specification below.
 # Date:    Wed 18 Jan 2023 07:03:49 PM EST
-# Copyright 2023 Andrew Nisbet
+# Copyright (c) 2023 Andrew Nisbet
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,19 +19,23 @@
 # limitations under the License.
 #
 ##############################################################
-import os
-from pathlib import Path
-import re
+
 import sys
 import getopt
+import re
+from os import path
+from os.path import exists
 import json
-from datetime import datetime
 import gzip
-import socket
-# TODO: Add switch to over-ride client type table.
-# There are 3 tasks: 
-# 1) Parse and load cmd codes and data codes into dictionaries.
-# 2) Parse and translate hist files records into JSON.
+from pathlib import Path
+from datetime import datetime
+import subprocess
+
+# Tasks: 
+# * Parse and load cmd codes into dictionary. Optional.
+# * Parse and load data codes into dictionary. Optional.
+# * Load bar codes so lookups can be done by barcode instead of item key. Optional.
+# * Parse and translate hist files records into JSON.
 #
 # Example: data code document (cmd codes are similar)
 # 0C|item category five|
@@ -43,365 +47,470 @@ import socket
 # E202301180001313066R ^S32IYFWOVERDRIVE^FEEPLMNA^FFSIPCHK^FcNONE^FDSIPCHK^dC6^UO21221013616708^UK1/18/2023^OAY^^O
 # E202301180001403066R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLWHP^UO21221027661047^UfIlovebigb00ks^NQ31221108836540^HB01/18/2024^HKTITLE^HOEPLLHL^dC5^^O00121
 # 
+# Added hostname detection for data and cmd code files.
+VERSION = "2.00.00"
 # When reading data codes and command codes, assume the default location on the ILS,
-# otherwise the user must enter the path on the command line. -d = datacodes, -c commandcodes.
-# Turning this to True will run all doctests.
-TEST_MODE  = False
-ILS_NAME   = 'edpl.sirsidynix.net'
-ILS_CC_PATH= '/software/EDPL/Unicorn/Custom/cmdcode'
-ILS_DC_PATH= '/software/EDPL/Unicorn/Custom/datacode'
-HIST_DIR   = '/software/EDPL/Unicorn/Logs/Hist'
-APP        = 'h2j'
-NEVER      = '2040-01-01'  # Some date in the far future.
-HOSTNAME   = socket.gethostname()
-VERSION    = "1.02.00" # Added hostname detection for data and cmd code files.
-HOLD_CLIENT_TABLE = {
-    '0': 'CLIENT_UNKNOWN',
-    '1': 'CLIENT_WEBCAT',
-    '2': 'CLIENT_3MSERVER',
-    '3': 'CLIENT_WORKFLOWS',
-    '4': 'CLIENT_INFOVIEW',
-    '5': 'CLIENT_ONLINE_CATALOG',
-    '6': 'CLIENT_SIP2',
-    '7': 'CLIENT_NCIP',
-    '8': 'CLIENT_SVA',
-    '9': 'CLIENT_WEB_STAFF',
-    '10': 'CLIENT_POCKET_CIRC',
-    '11': 'CLIENT_WS_PATRON',
-    '12': 'CLIENT_WS_BOOKMYNE',
-    '13': 'CLIENT_WS_DS',
-    '14': 'CLIENT_WS_STAFF',
-    '15': 'BC_PAC',
-    '16': 'BC_CAT',
-    '17': 'BOOKMYNE_P',
-    '18': 'SOCIAL_LIB',
-    '19': 'MOBLCIRC_S',
-    '20': 'BC_CIRC',
-    '21': 'BC_ACQ',
-    '22': 'BC_MOBILE'
-}
+# otherwise the datacode and cmdcode file in lib is used. This is done for testing
+# purposes.
+APP    = 'h2j'
+# A replacement date Symphony's deep time 'NEVER' which won't do as a timestamp.
+NEVER  = '2099-01-01'
+HOME   = '/software/EDPL/Unicorn'
 
-def usage():
-    usage_text = f"""
-    Usage: python {APP}.py [options]
+class Hist:
 
-    Converts SirsiDynix History logs into JSON. See enclosed license
-    for distribution restrictions.
-
-    If the script is running on the ILS you do not need to use the 
-    '-D' or '-C' switches (see below). The system cmdcode and datacode
-    files will be used. Make sure ILS_NAME is set correctly for your
-    ILS, currently it's '{ILS_NAME}'.
-
-    The script will automatically handle log file compression if required.
-
-    Date handling: SirsiDynix records dates in a number of 
-    ways in the log files. {APP} converts them to 'yyyy-mm-dd' format.
+    # Constructor 
+    # param: histFile:str - name of the history file to parse. See debug switch for exceptions. 
+    # param: encoding:str - encoding to be used when reading and writing to files. 
+    #   The default is 'ISO-8859-1' but 'UTF-8' is acceptable as well.  
+    # param: commandCodes - a dictionary or path to the cmdcode file. See debug switch for exceptions. 
+    #   By default the application will look in the unicorn directory where Symphony normally keeps it.  
+    # param: dataCodes 
+    def __init__(self, encoding:str='ISO-8859-1', barCodes:str=None, clientCodes:str=None, debug:bool=False):
+        self.is_ils         = exists(HOME)
+        self.line_count     = 0
+        self.errors         = 0
+        # self.data_code_path = f"{self.gpn('custom')}/datacode"
+        self.translate_cmd  = f"{self.gpn('bin')}/translate"
+        self.encoding       = encoding
+        self.cmd_codes      = self.readCodeFile(f"{self.gpn('custom')}/cmdcode")
+        self.data_codes     = self.readCodeFile(f"{self.gpn('custom')}/datacode", us=True)
+        # Load the dictionary of the types of services that can place holds. Preserve underscores.
+        if clientCodes:
+            self.hold_clients = self.readCodeFile(clientCodes)
+        else:
+            self.hold_clients = self.readCodeFile(f"{self.gpn('custom')}/holdclient")
+        # Can specify a dict of IDs and barcodes for testing
+        if barCodes:
+            self.bar_codes = self.readBarCodes(barCodes)
+        else:
+            print(f"WARNING: item IDs will not be converted into item barcodes.")
+            self.bar_codes = {}
+        self.missing_data_codes = {}
+        if debug:
+            print(f"encoding        :{self.encoding      }")
+            print(f"cmd_codes len   :{self.getCommandCodeCount()}")
+            print(f"data_codes len  :{self.getDataCodeCount()}")
+            print(f"hold_clients len:{self.getHoldClientCount()}")
+            print(f"bar_codes read  :{self.getBarCodeCount()}")
     
-    User PINs are redacted during conversion.
+    # Acts like 'getpathname' in Symphony, that is, it attempts to resolve 
+    # common fully qualified paths on the ILS given just the name of the directory
+    # in lower case. For example 'bincustom' will resolve to $HOME/Unicorn/Bincustom.
+    # If the application is not running on a Symphony ILS, every request resolves 
+    # to the test directory in the directory above this one, that is '$(pwd)/test'.
+    # param: dirName:str request named directory. For example 'hist' or 'custom'.
+    def gpn(self, dirName:str) -> str:
+        if self.is_ils:
+            get_path_name = subprocess.Popen(["getpathname", f"{dirName}"], stdout=subprocess.PIPE)
+            path = get_path_name.communicate()[0].decode().rstrip()
+        else:
+            # If not on the ILS just return the current directory for testing.
+            get_path_name = subprocess.Popen(["pwd"], stdout=subprocess.PIPE)
+            path = f"{get_path_name.communicate()[0].decode().rstrip()}"
+        return path
 
-    Cmd and data code definition files are read from the 'Unicorn/Custom' 
-    directory. See '-C' and '-D' flags for more information. 
+    def getLineCount(self) -> int:
+        return self.line_count
 
-    -c --hold_client="/foo/clients.txt": Path to hold client table
-       (JSON) file.
-       If the script is running on the ILS this switch is optional.
-    -C --CmdCodes="/foo/cmd.codes": Path of the command code definitions.
-       If the script is running on the ILS this switch is optional.
-    -D --DataCodes="/foo/data.codes": Path of the data code definitions.
-       If the script is running on the ILS this switch is optional.
-    -H --HistFile="/foo/bar.hist": REQUIRED. Path of the history log 
-       file to convert.
-    -h: Prints this help message.
-    -m: Output as MongoDB JSON (each record as a separate object).
-    -v: Turns on verbose messaging which reports data code errors. 
-       If a data code cannot be identified, an entry of 
-         'data_code_[unknown data code]':'[data code value]' 
-       is output to file and the record entry, line number, and
-       data code are written to stdout.
+    def getHoldClientCount(self) -> int:
+        return len(self.hold_clients)
 
-    Version: {VERSION} Copyright (c) 2023.
-    """
-    sys.stderr.write(usage_text)
-    sys.exit()
+    def getCommandCodeCount(self) -> int:
+        return len(self.cmd_codes)
 
-# Converts the many types of date strings stored in History logs into 'yyyy-mm-dd' database-ready format.
-def to_date(data:str):
-    """
-    >>> to_date('01/13/2023')
-    '2023-01-13'
-    >>> to_date('E202301180024483003R ')
-    '2023-01-18 00:24:48'
-    >>> to_date('1/3/2023')
-    '2023-01-03'
-    >>> to_date('20230118002448')
-    '2023-01-18 00:24:48'
-    >>> to_date('01/13/2023,5:33 PM')
-    '2023-01-13'
-    """
-    # And some dates have 1/18/2023,5:40 (sigh)
-    # And some dates have 'E202301180024483003R '
-    my_date = data.split(',')[0]
-    new_date = []
-    if len(my_date) >= 14: # Timestamp argument
-        new_time = []
-        if re.match(r'^E', my_date): # User sent entire first field
-            my_date = my_date[1:]
-        # Year
-        new_date.append(my_date[:4])
-        # Month
-        new_date.append(my_date[4:6])
-        # Day
-        new_date.append(my_date[6:8])
-        d = '-'.join(new_date)
-        # Hour
-        new_time.append(my_date[8:10])
-        # minute
-        new_time.append(my_date[10:12])
-        # Second
-        new_time.append(my_date[12:14])
-        t = ':'.join(new_time)
-        return f"{d} {t}"
-    else:
-        arr  = my_date.split('/')
-        try:
-            new_date.append("{:4d}".format(int(arr[2],base=10)))
-            new_date.append("{:02d}".format(int(arr[0],base=10)))
-            new_date.append("{:02d}".format(int(arr[1],base=10)))
-        except IndexError:
-            if data == 'TODAY':
-                return datetime.today().strftime('%Y-%m-%d')
-            if data == 'NEVER':
-                return NEVER
-            return "1900-01-01"
-        return '-'.join(new_date)
+    def getDataCodeCount(self) -> int:
+        return len(self.data_codes)
 
+    def getBarCodeCount(self) -> int:
+        return len(self.bar_codes)
 
-def _clean_string_(s:str,spc_to_underscore=False):
-    # Remove any weird characters. This should cover it, they're pretty clean.
-    for ch in ['\\','/','`','*','_','{','}','[',']','(',')','<','>','!','$',',','\'']:
-        if ch in s:
-            s = s.replace(ch, "")
-    # The command code is a s, not an identifier, so don't convert it into snake case.
-    if spc_to_underscore == True:
-        s = s.replace(' ', '_').lower()
-    return s
+    def getMissingDataCodes(self) -> dict:
+        return self.missing_data_codes
 
-def get_log_entry(data:list, command_codes:dict, data_codes:dict, line_no:int, verbose=False):
-    """
-    >>> c = {}
-    >>> count = add_to_dictionary('IY|Cancel Hold-bob|', c, False)
-    >>> d = {}
-    >>> count = add_to_dictionary('FE|Station Library|', d, True)
-    >>> count = add_to_dictionary('FF|Library Station|', d, True)
-    >>> count = add_to_dictionary('FG|Library|', d, True)
-    >>> data = 'E202301180024493003R ^S59IYFWCLOUDLIBRARY^FEEPLMNA^FGEPLHVY^FFEPLCPL^O'.strip().split('^')
-    >>> print(get_log_entry(data,c,d,1))
-    (0, {'timestamp': '2023-01-18 00:24:49', 'command_code': 'Cancel Hold-bob', 'station_library': 'MNA', 'library': 'HVY', 'library_station': 'CPL'})
-    """
-    record = {}
-    record['timestamp'] = to_date(data[0][1:15])  # 'E202301180024483003R' => '20230118002448'
-    # convert command code.
-    cmd = data[1][3:5]
-    err_count = 0
-    record['command_code'] = command_codes[cmd]
-    # Convert all data codes, or report those that are not defined.
-    for field in data[2:]:
-        dc = field.strip()[0:2]
-        # Don't process empty data fields '^^' or EOL '0' or 'O0'.
-        if len(dc) < 2 or dc == 'O0':
-            continue
-        try:
-            data_code = data_codes[dc]
-            value = field[2:]
+    def getErrorCount(self) -> int:
+        return self.errors
+
+    # Translates command, data, and client codes into human-readable form. 
+    # For example 'CV' command code will translate into 'Charge Item'. 
+    # param: rawCode:str - command, data, or client code string. 
+    def lookupCode(self, rawCode:str, whichDict:str='datacode', asValue:bool=False, lineNumber:int=1) ->str:
+        translated_code = rawCode
+        value           = ''
+        if whichDict == 'commandcode':
+            if len(rawCode) > 2:
+                # As in 'S61EVFWSMTCHTLHL1' wanted: 'EV'
+                rawCode = rawCode[3:5]
+                value   = rawCode[5:]
+            translated_code = self.cmd_codes.get(rawCode)
+        elif whichDict == 'datacode':
+            if len(rawCode) > 2:
+                # As in 'NQ31221120423970' wanted: 'NQ'
+                value   = rawCode[2:]
+                rawCode = rawCode[0:2]
+            translated_code = self.data_codes.get(rawCode)
+            if not translated_code:
+                translated_code = f"{rawCode}"
+                if translated_code:
+                    if lineNumber in self.missing_data_codes:
+                        if not rawCode in self.missing_data_codes.get(lineNumber):
+                            self.missing_data_codes[lineNumber] = f"{self.missing_data_codes[lineNumber]},{rawCode}"
+                    else:
+                        self.missing_data_codes[lineNumber] = rawCode
+        elif whichDict == 'clientcode':
+            translated_code = self.hold_clients.get(rawCode)
+        else:
+            print(f"* warning: on line {lineNumber}, invalid lookup for {rawCode} in table {whichDict}\n")
+        if asValue:
+            return value
+        # If get failed on any of the above dictionaries send back a cleaned version of the code.
+        if not translated_code:
+            return rawCode
+        return translated_code
+
+    # Converts a single line of a hist file into JSON. 
+    # param: data:list - string fields from the line of hist. 
+    # param: line_no:int - the current line of the hist file.  
+    def convertLogEntry(self, data:list, line_no:int):
+        # E202303231010243024R ^S00hEFWCALCIRC^FFCIRC^FEEPLCAL^FcNONE^dC19^**tJ2371230**^**tL55**^**IS1**^**HH41224719**^nuEPLRIV^nxHOLD^nrY^Fv2147483647^^O
+        # Where the following fields are                                       cat_key     seq_no   copy_no   hold_key  
+        record = {}
+        record['timestamp'] = self.toDate(data[0])  # 'E202301180024483003R' => '20230118002448'
+        err_count = 0
+        record['command_code'] = self.lookupCode(data[1], whichDict='commandcode', lineNumber=line_no)
+        if not record.get('command_code'):
+            err_count += 1
+            print(f"*error on line {line_no}, missing command_code!")
+            return (err_count, record)
+        # Capture 'hE' transit item data codes for cat key, call seq, and copy number. 
+        item_key = []
+        # Convert all data codes, or report those that are not defined.
+        for field in data[2:]:
+            data_code = self.lookupCode(field, lineNumber=line_no)
+            # Don't process empty data fields '^^' or EOL '0' or 'O0'.
+            if len(data_code) < 2 or data_code == 'O0':
+                continue
+            value = self.lookupCode(field, asValue=True, lineNumber=line_no)
+            if len(data_code) == 2:
+                data_code = f"data_code_{data_code}"
+                record[data_code] = value
+                continue
             if re.match(r'(.+)?date', data_code) or data_code == 'user_last_activity':
-                value = to_date(value)
+                value = self.toDate(value)
             # Get the 3-char branch code by removing the initial 'EPL'.
             elif re.match(r'(.+)?library', data_code) or re.match(r'transit_to', data_code) or re.match(r'transit_from', data_code):
                 value = value[3:]
             # Add fake user pin.
             elif re.match(r'user_pin', data_code):
                 value = 'xxxxx'
+            # Capture 'tJ' - catalog_key_number
+            elif re.match(r'catalog_key_number', data_code):
+                item_key.insert(0, value)
+            # Capture 'tL' - call_sequence_code
+            elif re.match(r'call_sequence_code', data_code):
+                item_key.append(value)
+            # Capture 'IS' - copy_number but only if catalog_key_number and call_sequence_code were found.
+            elif re.match(r'copy_number', data_code):
+                if item_key:
+                    item_key.append(value)
+                    _item_key_ = '|'.join(item_key)
+                    barcode = self.bar_codes.get(f"{_item_key_}|")
+                    if barcode:
+                        data_code = "item_id"
+                        value = barcode
             # Get rid of this tags leading '|a' in customer in this specific data code.
             elif re.match(r'entry_or_tag_data', data_code):
                 value = value[2:]
             elif re.match(r'client_type', data_code):
-                try:
-                    temp = HOLD_CLIENT_TABLE[value]
-                    value = temp
-                except KeyError:
-                    err_count += 1
-                    print(f"* warning on line {line_no}:\n*   missing hold client type: {value}")
+                value = self.lookupCode(value, whichDict='clientcode', lineNumber=line_no)
             record[data_code] = value
-        except KeyError:
-            err_count += 1
-            dc = _clean_string_(dc)
-            data_code = f"data_code_{dc}"
-            data_codes[dc] = data_code
-            if verbose == True:
-                if err_count == 1:
-                    print(f"* warning on line {line_no}:\n*   {data}")
-                print(f"*   '{dc}' is an unrecognized data code and will be recorded as 'data_code_{dc}': '{field[2:]}'.")
-    return (err_count, record)
+        if record['command_code'] == "Discharge Item" and not record.get('date_of_discharge'):
+            # Discharge item with no 'CO', 'date_of_discharge'.
+            record['date_of_discharge'] = self.toDate(data[0], justDate=True)
+        return (err_count, record)
 
-def add_to_dictionary(line:str, dictionary:dict, is_data_code=True):
+    # Converts and writes the JSON hist file contents to file.
+    def toJson(self, histFile:str=None, outFile:str=None, mongoDb:bool=False):
+        if not histFile:
+            return
+        if not path.isfile(histFile):
+            print(f"**error, no such file {histFile}.\n")
+            sys.exit()
+        print(f"histFile     :{histFile      }")
+        # test if the file is a zipped history file. They are named '*.Z'.
+        is_compressed_hist = True
+        if not histFile.endswith('.Z'):
+            is_compressed_hist = False
+        hist_log_list = []
+        if not outFile:
+            json_file = Path(histFile).with_suffix('')
+            json_file = f"{histFile}.json"
+        else:
+            json_file = outFile
+        ## Process the history log into JSON.
+        # Open the json file ready for output.
+        j = open(json_file, mode='w', encoding=self.encoding)
+        # History file handle; either gzipped or regular text.
+        if is_compressed_hist:
+            f = gzip.open(histFile, mode='rt', encoding=self.encoding)
+        else: # Not a zipped history file
+            f = open(histFile, mode='r', encoding=self.encoding)
+        # Process each of the lines.
+        for line in f:
+            self.line_count += 1
+            fields = line.strip().split('^')
+            (errors, record) = self.convertLogEntry(fields, self.line_count)
+            self.errors += errors
+            # Append to list if output JSON proper
+            if not mongoDb:
+                hist_log_list.append(record)
+            else: # else add each record to file a-la-MongoDB.
+                json.dump(record, j, ensure_ascii=False, indent=2)
+        if not mongoDb:
+            json.dump(hist_log_list, j, ensure_ascii=False, indent=2)
+        j.close()
+
+    # Reads and translates the command codes file from the Unicorn directory on the ILS
+    # but otherwise the ../test directory on this machine. If the translate command is
+    # available, it will be used to translate the file's contents, otherwise an empty
+    # dictionary is returned. Make sure the last line of files includes a newline. 
+    # param: commandCode:str command code file. If a 'translate' app is not found the 
+    #   contents will be used as is. This makes it conveinent to have a translated 
+    #   version of symphony commands that can be augmented with additional or improved
+    #   command names. 
+    # param: us:bool replaces spaces with underscores if True. Default False,
+    #   leave spaces as spaces.    
+    def readCodeFile(self, codeFile:str, us:bool=False, debug:bool=False) -> dict:
+        cmd_dict = {}
+        if not codeFile or not exists(codeFile):
+            print(f"*error, can't find code file {codeFile} required for translation.")
+            print(f"  command, data, or holdclient codes. Some Results will appear untranslated.")
+            return cmd_dict
+        # Symphony's translate command passes previously translated material without issue.
+        cat_process = subprocess.Popen(["cat", f"{codeFile}"], stdout=subprocess.PIPE)
+        translate_process = subprocess.Popen([f"{self.translate_cmd}"], stdin=cat_process.stdout, stdout=subprocess.PIPE, text=True)
+        for line in translate_process.stdout:
+            ct = line.split('|')
+            if not ct or len(ct) < 2:
+                continue
+            code = ct[0]
+            translation = self.cleanString(ct[1], us=us)
+            if cmd_dict.get(code):
+                if debug:
+                    self.errors += 1
+                    print("overwriting existing value of {code}.")
+            cmd_dict[code] = translation
+        # Wait and test pipe closure.
+        translate_process.wait()
+        if translate_process.returncode == 0:
+            if debug:
+                print(f"finished translation of {codeFile}")
+        else:
+            print(f"**error reading '{codeFile}'")
+            for line in translate_process.stderr:
+                print(line.strip())
+        if debug:
+            for key,value in cmd_dict.items():
+                print(f"{key} and {value}")
+        return cmd_dict
+
+    # Converts 'selitem -oIB' output to a dictionary where the key is the item ID 
+    # and the stored value is the associated bar code for the item.  
+    # param: line:str - output line from selitem -oIB untouched.  
+    def readBarCodes(self, barCodeFile:str):
+        bar_codes = {}
+        if exists(barCodeFile):
+            with open(barCodeFile, mode='r', encoding=self.encoding) as f:
+                for line in f:
+                    # Input line should look like '12345|55|1|31221012345678|' Straight from selitem -oIB
+                    ck_cs_cn_bc = line.split('|')
+                    if len(ck_cs_cn_bc) < 4:
+                        errors += 1
+                    # clean the definition of special characters.
+                    item_key = f"{ck_cs_cn_bc[0]}|{ck_cs_cn_bc[1]}|{ck_cs_cn_bc[2]}|"
+                    item_id = ck_cs_cn_bc[3].rstrip()
+                    bar_codes[item_key] = item_id
+        else:
+            print(f"*warning: expected but couldn't find '{barCodeFile}'.")
+        return bar_codes           
+        
+    # Some data codes don't have definitions in the vendor-supplied datacode file. 
+    # This method allows you to add or update better definitions or translations. 
+    # param: dataCodes:dict|str - new data code definitions to add to, and or clobber existing
+    # codes. Can be a dict in which case all the items are added to the datacodes, but
+    # if dataCodes is a string, it will be assumed to be a pipe-delimited data code 
+    # definition pair, which will be added as a single entry. 
+    def updateDataCodes(self, dataCodes:dict):
+        if dataCodes:
+            for key, value in dataCodes.items():
+                # Make sure dict keys don't include special chars and if they are 
+                # datacodes, replace spaces with underscores. 
+                value = self.cleanString(value, us=True)
+                self.data_codes[key] = value
+
+    # Cleans a standard set of special characters from a string. 
+    # param: string to clean. 
+    # param: us:bool - True will remove all special characters 
+    #   and replace any spaces with underscores. Default False, leave spaces intact.  
+    def cleanString(self, s:str, us:bool=False) -> str:
+        # Remove any weird characters. This should cover it, they're pretty clean.
+        for ch in ['\\','/','`','*','{','}','[',']','(',')','<','>','!','$',',','\'']:
+            if ch in s:
+                s = s.replace(ch, "")
+        # The command code is a s, not an identifier, so don't convert it into snake case.
+        if us:
+            s = s.replace(' ', '_').lower()
+        return s
+
+    # Converts the many types of date strings stored in History logs into 'yyyy-mm-dd' database-ready format. 
+    # param: data string which may or may not contain a date string. 
+    # return: the date converted to timestamp, or '1900-01-01' if a date can't be parsed from the string.
+    def toDate(self, data:str, justDate:bool=False) -> str:
+        # And some dates have 1/18/2023,5:40 (sigh)
+        # And some dates have 'E202301180024483003R '
+        my_date = data.split(',')[0]
+        new_date = []
+        if len(my_date) >= 14: # Timestamp argument
+            new_time = []
+            if re.match(r'^E', my_date): # User sent entire first field
+                my_date = my_date[1:]
+            # Year
+            new_date.append(my_date[:4])
+            # Month
+            new_date.append(my_date[4:6])
+            # Day
+            new_date.append(my_date[6:8])
+            d = '-'.join(new_date)
+            if justDate:
+                return f"{d}"
+            # Hour
+            new_time.append(my_date[8:10])
+            # minute
+            new_time.append(my_date[10:12])
+            # Second
+            new_time.append(my_date[12:14])
+            t = ':'.join(new_time)
+            return f"{d} {t}"
+        else:
+            arr  = my_date.split('/')
+            try:
+                new_date.append("{:4d}".format(int(arr[2],base=10)))
+                new_date.append("{:02d}".format(int(arr[0],base=10)))
+                new_date.append("{:02d}".format(int(arr[1],base=10)))
+            except IndexError:
+                if data == 'TODAY':
+                    return datetime.today().strftime('%Y-%m-%d')
+                if data == 'NEVER':
+                    return NEVER
+                return "1900-01-01"
+            return '-'.join(new_date)
+
+
+def usage():
+    usage_text = f"""
+    Usage: python {APP}.py [options]
+
+    Converts SirsiDynix History logs into JSON. See enclosed license
+    for distribution restrictions. It uses cmdcode and datacode files 
+    found in the standard Symphony directory of $HOME/Unicorn/Custom.
+    If the application is not run on the ILS as is the case in testing
+    it will look in the lib/ directory for translated versions of cmdcode
+    and datacode.
+
+    The script will automatically handle log file compression if required.
+
+    Date handling: SirsiDynix records dates in a number of 
+    ways in the log files. {APP} converts them to 'yyyy-mm-dd' format.
+    
+    User PINs are redacted during conversion. 
+
+    -c --clientCodes="/foo/clients.txt": Path to hold client table
+       A version exists in 'test/'.
+    -d: Turns on debug information.
+    -H --HistFile="/foo/bar.hist": REQUIRED. Hist log file or files to convert.
+        Multiple files can be specified as 'file1,file2, file3, ...'.
+    -h: Prints this help message.
+    -I --ItemKeyBarcodes="/foo/bar/items.lst": Optional. Path to the 
+       list of all item key / barcodes in 'c_key|call_seq|copy_num|item_id'
+       form. Use 'selitem -oIB' >items.lst.
+    -m: Output as MongoDB JSON (each record as a separate object).
+    -v: Outputs version to stdout.
+
+    Version: {VERSION} Copyright (c) 2023.
     """
-    >>> c={}
-    >>> add_to_dictionary('cw|ATHS (thesaurus) description|', c, False)
-    1
-    >>> print(f"{c}")
-    {'cw': 'ATHS thesaurus description'}
-    >>> c={}
-    >>> add_to_dictionary('cw|AT.HS [z/39]|', c, True)
-    1
-    >>> print(f"{c}")
-    {'cw': 'at.hs_z39'}
-    """
-    count = 0
-    cmd_array = line.split('|')
-    # clean the definition of special characters.
-    command = cmd_array[0]
-    definition = cmd_array[1]
-    # Remove any weird characters. This should cover it, they're pretty clean.
-    definition = _clean_string_(definition, is_data_code)
-    dictionary[command] = definition
-    count += 1
-    return count
+    sys.stderr.write(usage_text)
+    sys.exit()
 
 #  Take valid command line arguments.
 def main(argv):
-    is_verbose = False
-    is_mongo_json = False  # Output in proper JSON, not one dict per line as required for MongoDB.
-    json_file = ''
-    hist_log  = ''
-    # Dictionary of command code (key) and definition (value)
-    cmd_codes = {}
-    # Dictionary of data code (key) and definition (value)
-    data_codes= {}
-    c_count = 0
-    d_count = 0
-    is_compressed_hist = False
-    # Where all the history data will be stored.
-    hist_log = []
-    data_codes_file = ''
-    cmd_codes_file = ''
+    hist_files = []
+    # Output in proper JSON, not one dict per line as required for MongoDB.
+    use_mongo_json = False
+    debug       = False
+    barcodes    = ''
+    clientcodes = ''
+    itemBarcodes       = ''
+    # Translate command codes and data codes if required, and iff translate available.
     try:
-        opts, args = getopt.getopt(argv, "c:C:D:H:hmv", ["hold_client=", "CmdCodes=", "DataCodes=", "HistFile="])
+        opts, args = getopt.getopt(argv, "c:dH:I:mv", ["clientCodes=", "HistFile=", "ItemKeyBarcodes="])
     except getopt.GetoptError:
         usage()
     for opt, arg in opts:
-        if opt in ("-c", "--hold_client"):
-            assert isinstance(arg, str)
-            if os.path.isfile(arg) == False:
-                sys.stderr.write(f"**error, no such file {arg}.\n")
-                sys.exit()
-            try:
-                with open(arg, 'r') as j:
-                    HOLD_CLIENT_TABLE = json.load(j)
-            except:
-                sys.stderr.write(f"**error while reading JSON from {arg}.\n")
-                sys.exit()
-        if opt in ("-C", "--CmdCodes"):
-            assert isinstance(arg, str)
-            if os.path.isfile(arg) == False:
-                sys.stderr.write(f"**error, no such file {arg}.\n")
-                sys.exit()
-            cmd_codes_file = arg
-            # c_count = add_to_dictionary(arg, cmd_codes, False)
-        if opt in ("-D", "--DataCodes"):
-            assert isinstance(arg, str)
-            if os.path.isfile(arg) == False:
-                sys.stderr.write(f"**error, no such file {arg}.\n")
-                sys.exit()
-            data_codes_file = arg
-        if opt in ("-H", "--HistFile"):
-            assert isinstance(arg, str)
-            hist_log_file = arg
-            if os.path.isfile(hist_log_file) == False:
-                sys.stderr.write(f"**error, no such file {hist_log_file}.\n")
-                sys.exit()
-            # test if the file is a zipped history file. They are named '*.Z'.
-            extension = Path(hist_log_file).suffix
-            if re.match(r'^\.Z', extension):
-                is_compressed_hist = True
-                json_file = Path(hist_log_file).with_suffix('')
-            else:
-                is_compressed_hist = False
-                # The output JSON file is the same as the history log with '.hist' replaced with '.json'.
-                json_file = f"{Path(hist_log_file).with_suffix('')}"
-            json_file = f"{json_file}.json"
+        if opt in ("-c", "--clientCodes"):
+            clientcodes = arg
+        elif opt in "-d":
+            debug = True
+        elif opt in ("-H", "--HistFile"):
+            arg_list = arg.split(',')
+            for my_arg in arg_list:
+                a = my_arg.strip()
+                if a:
+                    hist_files.append(a)
         elif opt in "-h":
             usage()
+        elif opt in ("-I", "--ItemKeyBarcodes"):
+            itemBarcodes = arg
         elif opt in "-m":
-            is_mongo_json = True
+            use_mongo_json = True
         elif opt in "-v":
-            is_verbose = True
-    # Can be empty because they aren't required if the script is running on the ILS.
-    if data_codes_file == '':
-        if HOSTNAME == ILS_NAME:
-            data_codes_file = ILS_DC_PATH
+            print(f"{APP} version: {VERSION}.")
+            sys.exit(0)
         else:
-            print(f"*error, '-D' requires a valid data code file name except if run on the ILS.")
-            sys.exit()
-    if cmd_codes_file == '':
-        if HOSTNAME == ILS_NAME:
-            cmd_codes_file = ILS_CC_PATH
-        else:
-            print(f"*error, '-C' requires a valid cmd code file name except if run on the ILS.")
-            sys.exit()
+            print(f"invalid option {arg}")
+        
+    hist = Hist(barCodes=itemBarcodes, clientCodes=clientcodes, debug=debug)
     ## Load Codes and Definitions
-    # data codes
-    with open(data_codes_file, encoding='utf8') as f:
-        for line in f:
-            d_count += add_to_dictionary(line, data_codes, True)
-    f.close()
-    # Add data codes that don't seem to be in this file.
+    # Add data codes that don't seem to be in the default Symphony file on our ILS.
     # Some codes missing and location on ILS is unknow (at this time).
-    data_codes['uF'] = "user_first_name"
-    data_codes['uL'] = "user_last_name"
-    data_codes['uU'] = "user_prefered_name"
-    data_codes['P7'] = "circ_rule"
-    # Load Cmd Codes
-    with open(cmd_codes_file, encoding='utf8') as f:
-        for line in f:
-            c_count += add_to_dictionary(line, cmd_codes, False)
-    f.close()
-    ## Process the history log into JSON.
-    # Open the json file ready for output.
-    j = open(json_file, 'w', encoding='utf8')
-    # History file handle; either gzipped or regular text.
-    f = ''
-    if is_compressed_hist == True:
-        f = gzip.open(hist_log_file, 'rt')
-    else: # Not a zipped history file
-        f = open(hist_log_file, encoding='utf8')
-    # Process each of the lines.
-    line_no = 0
-    missing_data_codes = 0
-    for line in f:
-        line_no += 1
-        fields = line.strip().split('^')
-        (errors, record) = get_log_entry(fields, cmd_codes, data_codes, line_no, is_verbose)
-        missing_data_codes += errors
-        # Append to list if output JSON proper
-        if is_mongo_json == False:
-            hist_log.append(record)
-        else: # else add each record to file a-la-MongoDB.
-            json.dump(record, j, ensure_ascii=False, indent=2)
-    if is_mongo_json == False:
-        json.dump(hist_log, j, ensure_ascii=False, indent=2)
-    j.close()
+    data_code_extras= {}
+    data_code_extras['uF'] = "user_first_name"
+    data_code_extras['uL'] = "user_last_name"
+    data_code_extras['uU'] = "user_prefered_name"
+    data_code_extras['P7'] = "circ_rule"
+    hist.updateDataCodes(dataCodes=data_code_extras)
+    # Convert hist file to JSON
+    for hist_file in hist_files:
+        hist.toJson(hist_file, mongoDb=use_mongo_json)
     # Output report.
-    print(f"Total cmd codes read:    {c_count}\nTotal data codes read:   {d_count}\nTotal history records:   {line_no}")
-    explain = ''
-    if missing_data_codes > 0:
-        explain = f", (any missing codes have been recorded as 'data_code_[data code value]':'[read value]')"
-    print(f"Unidentified data codes: {missing_data_codes}{explain}\n")
+    print(f"Total cmd codes read:    {hist.getCommandCodeCount()}\nTotal data codes read:   {hist.getDataCodeCount()}\nTotal history records:   {hist.getLineCount()}")
+    print(f"Total items read:     {hist.getBarCodeCount()}")
+    print(f"Total errors:     {hist.getErrorCount()}")
+    missing_data_codes = hist.getMissingDataCodes()
+    if missing_data_codes and debug:
+        err_messages = 25
+        err_count    = 0
+        print(f"Data codes without definitions have been recorded as 'data_code_[data code value]':'[read value]'")
+        for (line, code) in missing_data_codes.items():
+            print(f" * on line {line} => {code}")
+            err_count += 1
+            if err_count >= err_messages:
+                print(f" ... with {len(missing_data_codes) - err_count} additional that will not be display.")
+                break
 
 if __name__ == "__main__":
-    if TEST_MODE == True:
+    if len(sys.argv) == 1:
         import doctest
-        doctest.testmod()
+        doctest.testfile("hist.tst")
     else:
         main(sys.argv[1:])
 # EOF

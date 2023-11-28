@@ -1,3 +1,44 @@
+## Note
+**Files `holdclients`, `datacode`, and `cmdcode` must have a newline on the last line.**
+
+# TODO
+* See if there is a holdclient file and change in code if necessary. **Done**, there doesn't seem to be a holdclient table, but a created one is provided in the `lib/` directory called `holdclient`.
+* Test if `translate` passes text that doesn't need translation without changes. **Done** things that don't need translating are not altered by translate.
+* Fix discharge item that doesn't include date. **Done**
+
+Example of discharge item with and without date.
+E202310100148422967R ^S61EVFWSMTCHTLHL1^FEEPLLHL^FFSMTCHT^FcNONE^FDSIPCHK^dC6^NQ31221120423970^CO10/10/2023,1:48^^O
+WITH discharge date:
+{
+    "timestamp": "2023-10-10 01:48:42",
+    "command_code": "Discharge Item",
+    "station_library": "LHL",
+    "station_login_user_access": "SMTCHT",
+    "station_login_clearance": "NONE",
+    "station": "SIPCHK",
+    "client_type": "CLIENT_SIP2",
+    "item_id": "31221120423970",
+    "date_of_discharge": "2023-10-10"
+  },
+  
+WITHOUT discharge date:
+E202310100510083031R ^S01EVFFADMIN^FEEPLRIV^FcNONE^NQ31221112079020^^O00049
+{
+    "timestamp": "2023-10-10 05:10:08",
+    "command_code": "Discharge Item",
+    "station_library": "RIV",
+    "station_login_clearance": "NONE",
+    "item_id": "31221112079020"
+  },
+
+
+TODO:
+1) Verify that FV, hF, and EV are being extracted, translated and used during conversion.
+2) Add function to verify counts of records, and counts of all the different codes converted, 
+and compare that to the total records read.
+1) Refactor into class so we can do external testing on hist2json object.
+2) Improve parameter handling.
+
 # History to JSON
 
 The purpose of `hist2json` is to convert SirsiDynix's Symphony history log files into `JSON` for analysis, diagnostics, or forensic analysis tools. The Edmonton Public Library uses it to add logging data to their data warehouse, while the systems administrators load the data into a no-sql database for foresic and diagnostic reports.
@@ -94,6 +135,7 @@ For options [see below](#operation_instructions).
 `-D`, `--DataCodes="/foo/datacodes"`: Path of the data code definitions.  
     If the script is running on the ILS this switch is optional.  
 `-H`, `--HistFile="/foo/bar/[date].hist.Z"`: REQUIRED. Path of the history log file to convert.  
+`-I`, `--ItemKeyBarcodes="/foo/bar/items.lst"`: Optional. Path to the list of all item key / barcodes in `c_key|call_seq|copy_num|item_id` form. Use `selitem -oIB`.  
 `-h`: Prints this help message.  
 `-m`: Output as MongoDB JSON (each record as a separate object).  
 `-v`: Turns on verbose messaging which reports data code errors. If a data code cannot be identified, an entry of `'data_code_[unknown data code]':'[data code value]'` is output to file and the record entry, line number, and data code are written to stdout.  
