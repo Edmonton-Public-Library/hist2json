@@ -107,7 +107,7 @@ class Hist:
         else:
             # If not on the ILS just return the current directory for testing.
             get_path_name = subprocess.Popen(["pwd"], stdout=subprocess.PIPE)
-            path = f"{get_path_name.communicate()[0].decode().rstrip()}/test"
+            path = f"{get_path_name.communicate()[0].decode().rstrip()}"
         return path
 
     def getLineCount(self) -> int:
@@ -160,7 +160,7 @@ class Hist:
         elif whichDict == 'clientcode':
             translated_code = self.hold_clients.get(rawCode)
         else:
-            print(f"* warning: on line {lineNumber}, invalid lookup for {rawCode} in table {whichDict}\n\n")
+            print(f"* warning: on line {lineNumber}, invalid lookup for {rawCode} in table {whichDict}\n")
         if asValue:
             return value
         # If get failed on any of the above dictionaries send back a cleaned version of the code.
@@ -331,7 +331,7 @@ class Hist:
                     item_id = ck_cs_cn_bc[3].rstrip()
                     bar_codes[item_key] = item_id
         else:
-            print(f"*warning: expected '{barCodeFile}' to be a file.")
+            print(f"*warning: expected but couldn't find '{barCodeFile}'.")
         return bar_codes           
         
     # Some data codes don't have definitions in the vendor-supplied datacode file. 
@@ -496,7 +496,7 @@ def main(argv):
     print(f"Total items read:     {hist.getBarCodeCount()}")
     print(f"Total errors:     {hist.getErrorCount()}")
     missing_data_codes = hist.getMissingDataCodes()
-    if missing_data_codes:
+    if missing_data_codes and debug:
         err_messages = 25
         err_count    = 0
         print(f"Data codes without definitions have been recorded as 'data_code_[data code value]':'[read value]'")
