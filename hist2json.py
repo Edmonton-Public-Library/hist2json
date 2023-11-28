@@ -48,7 +48,7 @@ import subprocess
 # E202301180001403066R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLWHP^UO21221027661047^UfIlovebigb00ks^NQ31221108836540^HB01/18/2024^HKTITLE^HOEPLLHL^dC5^^O00121
 # 
 # Added hostname detection for data and cmd code files.
-VERSION = "2.00.00_dev"
+VERSION = "2.00.00"
 # When reading data codes and command codes, assume the default location on the ILS,
 # otherwise the datacode and cmdcode file in lib is used. This is done for testing
 # purposes.
