@@ -9,5 +9,6 @@ hold_client_table.txt*.zip
 h2j/
 .ipynb_checkpoints/
 *.ipynb
-*.lst
 __pycache__/
+test/test00.hist
+test/items.lst

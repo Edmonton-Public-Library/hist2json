@@ -147,3 +147,34 @@ Here is a discharge without a discharge date.
 >>> data = 'E202310100510083031R ^S01EVFFADMIN^FEEPLRIV^FcNONE^NQ31221112079020^^O00049'.split('^')
 >>> print(hist.convertLogEntry(data,2))
 (0, {'timestamp': '2023-10-10 05:10:08', 'command_code': 'Discharge Item', 'station_library': 'RIV', 'station_login_clearance': 'NONE', 'item_id': '31221112079020', 'date_of_discharge': '2023-10-10'})
+
+
+Test that items table (-I) is working
+--------------------------------------
+
+Add copy number and item id.
+>>> data = 'E202304110918372988R ^S41hEFWJPLCIRC^FFCIRC^FEEPLJPL^FcNONE^dC19^tJ2161659^tL47^IS2^HH41326972^nuEPLLHL^nxHOLD^nrY^Fv2147483647^^O'.split('^')
+>>> print(hist.convertLogEntry(data, 3))
+(0, {'timestamp': '2023-04-11 09:18:37', 'command_code': 'Transit Item', 'station_login_user_access': 'CIRC', 'station_library': 'JPL', 'station_login_clearance': 'NONE', 'client_type': 'MOBLCIRC_S', 'catalog_key_number': '2161659', 'call_sequence_code': '47', 'copy_number': '2', 'item_id': '31221023069607', 'hold_number': '41326972', 'transit_to': 'LHL', 'transit_reason': 'HOLD', 'data_code_nr': 'Y', 'max_length_of_transaction_response': '2147483647'})
+
+Fail lookup still writes all data, but without item_id.
+>>> data = 'E202304110919010005R ^S93hEFWJPLCIRC^FFCIRC^FEEPLJPL^FcNONE^dC19^tJ278595^tL304^IS1^HH41327870^nuEPLLHL^nxHOLD^nrY^Fv2147483647^^O'.split('^')
+>>> print(hist.convertLogEntry(data, 3))
+(0, {'timestamp': '2023-04-11 09:19:01', 'command_code': 'Transit Item', 'station_login_user_access': 'CIRC', 'station_library': 'JPL', 'station_login_clearance': 'NONE', 'client_type': 'MOBLCIRC_S', 'catalog_key_number': '278595', 'call_sequence_code': '304', 'copy_number': '1', 'hold_number': '41327870', 'transit_to': 'LHL', 'transit_reason': 'HOLD', 'data_code_nr': 'Y', 'max_length_of_transaction_response': '2147483647'})
+
+
+Test -c hold client table change works.
+---------------------------------------
+
+>>> data = 'E202304110006452995R ^S17IYFWOVERDRIVE^FEEPLMNA^FFSIPCHK^FcNONE^FDSIPCHK^dC6^UO21221027804613^UK4/11/2023^OAY^^O'.split('^')
+>>> print(hist.convertLogEntry(data, 4))
+(0, {'timestamp': '2023-04-11 00:06:45', 'command_code': 'Edit User Part B', 'station_library': 'MNA', 'station_login_user_access': 'SIPCHK', 'station_login_clearance': 'NONE', 'station': 'SIPCHK', 'client_type': 'CLIENT_SIP2', 'user_id': '21221027804613', 'user_last_activity': '2023-04-11', 'user_edit_override': 'Y'})
+>>> hist = Hist(barCodes='test/items1.lst', clientCodes='test/hold_client_table.lst', debug=True)
+encoding        :ISO-8859-1
+cmd_codes len   :533
+data_codes len  :1881
+hold_clients len:24
+bar_codes read  :10
+>>> data = 'E202304110006462936R ^S18IYFWCLOUDLIBRARY^FEEPLMNA^FFSIPCHK^FcNONE^FDSIPCHK^dC6^UO21221029670244^UK4/11/2023^OAY^^O'.split('^')
+>>> print(hist.convertLogEntry(data, 4))
+(0, {'timestamp': '2023-04-11 00:06:46', 'command_code': 'Edit User Part B', 'station_library': 'MNA', 'station_login_user_access': 'SIPCHK', 'station_login_clearance': 'NONE', 'station': 'SIPCHK', 'client_type': 'CLIENT_SLAPPER', 'user_id': '21221029670244', 'user_last_activity': '2023-04-11', 'user_edit_override': 'Y'})

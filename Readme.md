@@ -127,19 +127,17 @@ For options [see below](#operation_instructions).
 
 ## Operating instructions
 
-
-`-c`, `--hold_client="/foo/clients.txt"`: Path to hold client table (JSON) file.
-    If the script is running on the ILS this switch is optional.  
-`-C`, `--CmdCodes="/foo/cmdcodes"`: Path of the command code definitions.  
-    If the script is running on the ILS this switch is optional.  
-`-D`, `--DataCodes="/foo/datacodes"`: Path of the data code definitions.  
-    If the script is running on the ILS this switch is optional.  
-`-H`, `--HistFile="/foo/bar/[date].hist.Z"`: REQUIRED. Path of the history log file to convert.  
-`-I`, `--ItemKeyBarcodes="/foo/bar/items.lst"`: Optional. Path to the list of all item key / barcodes in `c_key|call_seq|copy_num|item_id` form. Use `selitem -oIB`.  
-`-h`: Prints this help message.  
-`-m`: Output as MongoDB JSON (each record as a separate object).  
-`-v`: Turns on verbose messaging which reports data code errors. If a data code cannot be identified, an entry of `'data_code_[unknown data code]':'[data code value]'` is output to file and the record entry, line number, and data code are written to stdout.  
-
+`-c` `--clientCodes="/foo/clients.txt"`: Path to hold client table
+    A version exists in `'test/'`.
+`-d`: Turns on debug information.
+`-H` `--HistFile="/foo/bar.hist"`: REQUIRED. Hist log file or files to convert.
+    Multiple files can be specified as 'file1,file2, file3, ...'.
+`-h`: Prints this help message.
+`-I` `--ItemKeyBarcodes="/foo/bar/items.lst"`: Optional. Path to the 
+    list of all item key / barcodes in `'c_key|call_seq|copy_num|item_id'`
+    form. Use `'selitem -oIB' >items.lst`.
+`-m`: Output as MongoDB JSON (each record as a separate object).
+`-v`: Outputs version to stdout.
 
 ## Copyright and licensing
 

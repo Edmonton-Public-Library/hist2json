@@ -48,7 +48,7 @@ import subprocess
 # E202301180001403066R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLWHP^UO21221027661047^UfIlovebigb00ks^NQ31221108836540^HB01/18/2024^HKTITLE^HOEPLLHL^dC5^^O00121
 # 
 # Added hostname detection for data and cmd code files.
-VERSION = "2.00.01"
+VERSION = "2.00.02"
 # When reading data codes and command codes, assume the default location on the ILS,
 # otherwise the datacode and cmdcode file in lib is used. This is done for testing
 # purposes.
@@ -104,10 +104,11 @@ class Hist:
         if self.is_ils:
             get_path_name = subprocess.Popen(["getpathname", f"{dirName}"], stdout=subprocess.PIPE)
             path = get_path_name.communicate()[0].decode().rstrip()
-        else:
-            # If not on the ILS just return the current directory for testing.
-            get_path_name = subprocess.Popen(["pwd"], stdout=subprocess.PIPE)
-            path = f"{get_path_name.communicate()[0].decode().rstrip()}"
+            if exists(path):
+                return path
+        # If not on the ILS OR the directory wasn't found check the local directory.
+        get_path_name = subprocess.Popen(["pwd"], stdout=subprocess.PIPE)
+        path = f"{get_path_name.communicate()[0].decode().rstrip()}"
         return path
 
     def getLineCount(self) -> int:
@@ -211,6 +212,8 @@ class Hist:
                 item_key.append(value)
             # Capture 'IS' - copy_number but only if catalog_key_number and call_sequence_code were found.
             elif re.match(r'copy_number', data_code):
+                # Store the copy number before making they get clobbered by the item_id lookup.
+                record[data_code] = value
                 if item_key:
                     item_key.append(value)
                     _item_key_ = '|'.join(item_key)
