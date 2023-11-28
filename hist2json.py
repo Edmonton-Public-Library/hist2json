@@ -355,6 +355,7 @@ class Hist:
     # param: us:bool - True will remove all special characters 
     #   and replace any spaces with underscores. Default False, leave spaces intact.  
     def cleanString(self, s:str, us:bool=False) -> str:
+        s = s.strip()
         # Remove any weird characters. This should cover it, they're pretty clean.
         for ch in ['\\','/','`','*','{','}','[',']','(',')','<','>','!','$',',','\'']:
             if ch in s:

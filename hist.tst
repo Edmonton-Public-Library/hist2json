@@ -65,7 +65,7 @@ param: string to clean.
 param: spc_to_underscore as boolean, True will remove all special characters and replace any spaces with underscores.
 >>> s = """This [isn't] a \$tring th*t i've (liked) until_now} """
 >>> print(f"{hist.cleanString(s)}")
-This isnt a tring tht ive liked until_now 
+This isnt a tring tht ive liked until_now
 
 
 Test toDate() method
