@@ -180,7 +180,7 @@ class Hist:
         record['command_code'] = self.lookupCode(data[1], whichDict='commandcode', lineNumber=line_no)
         if not record.get('command_code'):
             err_count += 1
-            print(f"*error on line {line_no}, missing command_code!\n\n")
+            print(f"*error on line {line_no}, missing command_code!")
             return (err_count, record)
         # Capture 'hE' transit item data codes for cat key, call seq, and copy number. 
         item_key = []
@@ -234,7 +234,7 @@ class Hist:
         if not histFile:
             return
         if not path.isfile(histFile):
-            print(f"**error, no such file {histFile}.\n\n")
+            print(f"**error, no such file {histFile}.\n")
             sys.exit()
         print(f"histFile     :{histFile      }")
         # test if the file is a zipped history file. They are named '*.Z'.
@@ -283,8 +283,8 @@ class Hist:
     def readCodeFile(self, codeFile:str, us:bool=False, debug:bool=False) -> dict:
         cmd_dict = {}
         if not codeFile or not exists(codeFile):
-            print(f"*error, can't find code file {codeFile} required for translation.\n")
-            print(f"  command, data, or holdclient codes. Some Results will appear untranslated.\n")
+            print(f"*error, can't find code file {codeFile} required for translation.")
+            print(f"  command, data, or holdclient codes. Some Results will appear untranslated.")
             return cmd_dict
         # Symphony's translate command passes previously translated material without issue.
         cat_process = subprocess.Popen(["cat", f"{codeFile}"], stdout=subprocess.PIPE)
