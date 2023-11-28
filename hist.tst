@@ -1,7 +1,11 @@
 Provides tests for hist.py
+==========================
 
 
 >>> from hist2json import Hist
+
+
+
 >>> hist = Hist(debug=True)
 WARNING: item IDs will not be converted into item barcodes.
 encoding        :ISO-8859-1
@@ -102,7 +106,7 @@ Test lookupCode()
 
 Test readClientCodes method
 ---------------------------
->>> hist = Hist(barCodes='test/items1.lst', debug=True)
+>>> hist = Hist(barCodes='test/items1.lst', clientCodes='hold_client_table.lst', debug=True)
 encoding        :ISO-8859-1
 cmd_codes len   :533
 data_codes len  :1881
@@ -131,7 +135,7 @@ Test the hist.convertLogEntry() method.
 Test that item discharge without dates get dates
 ------------------------------------------------
 
->>> hist = Hist(barCodes='test/items1.lst', debug=True)
+>>> hist = Hist(barCodes='test/items1.lst', clientCodes='hold_client_table.lst', debug=True)
 encoding        :ISO-8859-1
 cmd_codes len   :533
 data_codes len  :1881
