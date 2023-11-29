@@ -48,7 +48,7 @@ import subprocess
 # E202301180001403066R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLWHP^UO21221027661047^UfIlovebigb00ks^NQ31221108836540^HB01/18/2024^HKTITLE^HOEPLLHL^dC5^^O00121
 # 
 # Added hostname detection for data and cmd code files.
-VERSION = "2.00.02"
+VERSION = "2.00.03"
 # When reading data codes and command codes, assume the default location on the ILS,
 # otherwise the datacode and cmdcode file in lib is used. This is done for testing
 # purposes.
@@ -134,7 +134,7 @@ class Hist:
     # Translates command, data, and client codes into human-readable form. 
     # For example 'CV' command code will translate into 'Charge Item'. 
     # param: rawCode:str - command, data, or client code string. 
-    def lookupCode(self, rawCode:str, whichDict:str='datacode', asValue:bool=False, lineNumber:int=1) ->str:
+    def getTranslation(self, rawCode:str, whichDict:str='datacode', asValue:bool=False, lineNumber:int=1) ->str:
         translated_code = rawCode
         value           = ''
         if whichDict == 'commandcode':
@@ -177,7 +177,7 @@ class Hist:
         record = {}
         record['timestamp'] = self.toDate(data[0])  # 'E202301180024483003R' => '20230118002448'
         err_count = 0
-        record['command_code'] = self.lookupCode(data[1], whichDict='commandcode', lineNumber=line_no)
+        record['command_code'] = self.getTranslation(data[1], whichDict='commandcode', lineNumber=line_no)
         if not record.get('command_code'):
             err_count += 1
             print(f"*error on line {line_no}, missing command_code!")
@@ -186,16 +186,16 @@ class Hist:
         item_key = []
         # Convert all data codes, or report those that are not defined.
         for field in data[2:]:
-            data_code = self.lookupCode(field, lineNumber=line_no)
+            data_code = self.getTranslation(field, lineNumber=line_no)
             # Don't process empty data fields '^^' or EOL '0' or 'O0'.
             if len(data_code) < 2 or data_code == 'O0':
                 continue
-            value = self.lookupCode(field, asValue=True, lineNumber=line_no)
+            value = self.getTranslation(field, asValue=True, lineNumber=line_no)
             if len(data_code) == 2:
                 data_code = f"data_code_{data_code}"
                 record[data_code] = value
                 continue
-            if re.match(r'(.+)?date', data_code) or data_code == 'user_last_activity':
+            if re.match(r'(.+)?date', data_code) or data_code == 'user_last_activity' or data_code == 'birth_year':
                 value = self.toDate(value)
             # Get the 3-char branch code by removing the initial 'EPL'.
             elif re.match(r'(.+)?library', data_code) or re.match(r'transit_to', data_code) or re.match(r'transit_from', data_code):
@@ -224,7 +224,7 @@ class Hist:
             elif re.match(r'entry_or_tag_data', data_code):
                 value = value[2:]
             elif re.match(r'client_type', data_code):
-                value = self.lookupCode(value, whichDict='clientcode', lineNumber=line_no)
+                value = self.getTranslation(value, whichDict='clientcode', lineNumber=line_no)
             record[data_code] = value
         if record['command_code'] == "Discharge Item" and not record.get('date_of_discharge'):
             # Discharge item with no 'CO', 'date_of_discharge'.
@@ -513,10 +513,7 @@ def main(argv):
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         import doctest
-        if exists(HOME):
-            doctest.testfile("hist_prod.tst")
-        else:
-            doctest.testfile("hist.tst")
+        doctest.testfile("hist.tst")
     else:
         main(sys.argv[1:])
 # EOF
