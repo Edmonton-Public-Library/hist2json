@@ -190,3 +190,141 @@ Test that birth_year gets converted
 >>> data = 'E202304122237183071R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767^uFLinda^uLSpeer^uUSPEER , LINDA^uV0^UMEPLMNA^PEEPL_ADULT^P5ECONSENT^0D5:ECONSENT^UZ4/5/1971^UD4/12/2023^IbENGLISH^P7CIRCRULE^jlY^^O00179'.split('^')
 >>> print(hist.convertLogEntry(data, 4))
 (0, {'timestamp': '2023-04-12 22:37:18', 'command_code': 'Create User Part B', 'station_login_environment': 'ADMIN', 'station_library': 'MNA', 'user_id': '21221900070767', 'data_code_uF': 'Linda', 'data_code_uL': 'Speer', 'data_code_uU': 'SPEER , LINDA', 'data_code_uV': '0', 'user_library': 'MNA', 'user_profile_name': 'EPL_ADULT', 'user_category_5': 'ECONSENT', 'list_of_user_categories': '5:ECONSENT', 'birth_year': '1971-04-05', 'date_privilege_granted': '2023-04-12', 'language': 'ENGLISH', 'data_code_P7': 'CIRCRULE', 'data_code_jl': 'Y'})
+
+
+Test start and end date range
+-----------------------------
+
+>>> hist = Hist(barCodes='test/items1.lst', clientCodes='hold_client_table.lst', debug=True)
+encoding        :ISO-8859-1
+cmd_codes len   :533
+data_codes len  :1881
+hold_clients len:23
+bar_codes read  :10
+>>> hist.toJson('test/test01.hist', start='20230412', end='20230413')
+[
+  {
+    "timestamp": "2023-04-12 00:00:02",
+    "command_code": "Edit User Part B",
+    "station_library": "MNA",
+    "station_login_user_access": "SIPCHK",
+    "station_login_clearance": "NONE",
+    "station": "SIPCHK",
+    "client_type": "CLIENT_SIP2",
+    "user_id": "21221021970238",
+    "user_last_activity": "2023-04-11",
+    "user_edit_override": "Y"
+  },
+  {
+    "timestamp": "2023-04-12 00:00:02",
+    "command_code": "Edit User Part B",
+    "station_library": "MNA",
+    "station_login_user_access": "SIPCHK",
+    "station_login_clearance": "NONE",
+    "station": "SIPCHK",
+    "client_type": "CLIENT_SIP2",
+    "user_id": "21221900064153",
+    "user_last_activity": "2023-04-11",
+    "user_edit_override": "Y"
+  }
+]
+
+Test if toJson works with file
+------------------------------
+>>> testFile = 'test01.deleteme.json'
+>>> hist.toJson('test/test01.hist', outFile=testFile, start='20230412', end='20230413')
+>>> from os.path import exists
+>>> import os, json
+>>> if exists(testFile):
+...     print(os.stat(testFile).st_size != 0)
+True
+>>> lines = []
+>>> with open(testFile, 'rt') as f:
+...     lines = json.load(f)
+...     f.close()
+>>> print(lines)
+[{'timestamp': '2023-04-12 00:00:02', 'command_code': 'Edit User Part B', 'station_library': 'MNA', 'station_login_user_access': 'SIPCHK', 'station_login_clearance': 'NONE', 'station': 'SIPCHK', 'client_type': 'CLIENT_SIP2', 'user_id': '21221021970238', 'user_last_activity': '2023-04-11', 'user_edit_override': 'Y'}, {'timestamp': '2023-04-12 00:00:02', 'command_code': 'Edit User Part B', 'station_library': 'MNA', 'station_login_user_access': 'SIPCHK', 'station_login_clearance': 'NONE', 'station': 'SIPCHK', 'client_type': 'CLIENT_SIP2', 'user_id': '21221900064153', 'user_last_activity': '2023-04-11', 'user_edit_override': 'Y'}]
+>>> os.unlink(testFile)
+
+
+Test selection of specific minute in log
+----------------------------------------
+>>> hist = Hist(barCodes='test/items1.lst', clientCodes='hold_client_table.lst', debug=True)
+encoding        :ISO-8859-1
+cmd_codes len   :533
+data_codes len  :1881
+hold_clients len:23
+bar_codes read  :10
+>>> hist.toJson('test/test01.hist', start='202304130002', end='202304130003')
+[
+  {
+    "timestamp": "2023-04-13 00:02:57",
+    "command_code": "Edit User Part B",
+    "station_library": "MNA",
+    "station_login_user_access": "SIPCHK",
+    "station_login_clearance": "NONE",
+    "station": "SIPCHK",
+    "client_type": "CLIENT_SIP2",
+    "user_id": "21221005169575",
+    "user_last_activity": "2023-03-23",
+    "user_edit_override": "Y"
+  }
+]
+
+Test just end time specified
+----------------------------
+>>> hist = Hist(barCodes='test/items1.lst', clientCodes='hold_client_table.lst', debug=True)
+encoding        :ISO-8859-1
+cmd_codes len   :533
+data_codes len  :1881
+hold_clients len:23
+bar_codes read  :10
+>>> hist.toJson('test/test01.hist', end='20230411')
+[
+  {
+    "timestamp": "2023-04-10 00:00:10",
+    "command_code": "Edit User Part B",
+    "station_library": "MNA",
+    "station_login_user_access": "SIPCHK",
+    "station_login_clearance": "NONE",
+    "station": "SIPCHK",
+    "client_type": "CLIENT_SIP2",
+    "user_id": "21221030297904",
+    "user_last_activity": "2023-03-23",
+    "user_edit_override": "Y"
+  },
+  {
+    "timestamp": "2023-04-10 00:00:10",
+    "command_code": "Transit Item",
+    "station_login_user_access": "CIRC",
+    "station_library": "CAL",
+    "station_login_clearance": "NONE",
+    "client_type": "MOBLCIRC_S",
+    "catalog_key_number": "2371230",
+    "call_sequence_code": "55",
+    "copy_number": "1",
+    "hold_number": "41224719",
+    "transit_to": "RIV",
+    "transit_reason": "HOLD",
+    "data_code_nr": "Y",
+    "max_length_of_transaction_response": "2147483647"
+  }
+]
+
+>>> hist.toJson('test/test01.hist', start='20230414')
+[
+  {
+    "timestamp": "2023-04-14 00:03:59",
+    "command_code": "Edit User Part B",
+    "station_library": "MNA",
+    "station_login_user_access": "SIPCHK",
+    "station_login_clearance": "NONE",
+    "station": "SIPCHK",
+    "client_type": "CLIENT_SIP2",
+    "user_id": "21221015619395",
+    "user_last_activity": "2023-03-23",
+    "user_edit_override": "Y"
+  }
+]
+
+>>> hist.toJson('test/test01.hist', outFile='test/test01.hist.json')
