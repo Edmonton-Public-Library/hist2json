@@ -1,12 +1,14 @@
 Provides tests for hist.py
 ==========================
-
+Why a hist_prod.tst file? Because the hold_client_table.lst currently 
+is found in the project directory, not in `getpathname custom` so it 
+is specifically called on production, but not on the dev machine.
 
 >>> from hist2json import Hist
 
 
 
->>> hist = Hist(debug=True)
+>>> hist = Hist(clientCodes='hold_client_table.lst', debug=True)
 WARNING: item IDs will not be converted into item barcodes.
 encoding        :ISO-8859-1
 cmd_codes len   :533
@@ -23,13 +25,13 @@ see_me_changed
 
 Test reading bar codes from a file 
 ----------------------------------
->>> hist = Hist(barCodes='test/items.lst', debug=True)
+>>> hist = Hist(barCodes='test/items.lst', clientCodes='hold_client_table.lst', debug=True)
 encoding        :ISO-8859-1
 cmd_codes len   :533
 data_codes len  :1881
 hold_clients len:23
 bar_codes read  :1630964
->>> hist = Hist(barCodes='test/items1.lst', debug=True)
+>>> hist = Hist(barCodes='test/items1.lst', clientCodes='hold_client_table.lst', debug=True)
 encoding        :ISO-8859-1
 cmd_codes len   :533
 data_codes len  :1881
@@ -82,25 +84,25 @@ Test toDate() method
 '2023-01-13'
 
 
-Test lookupCode()
+Test getTranslation()
 --------------------
->>> hist.lookupCode('EV', whichDict='commandcode')
+>>> hist.getTranslation('EV', whichDict='commandcode')
 'Discharge Item'
->>> hist.lookupCode('NQ')
+>>> hist.getTranslation('NQ')
 'item_id'
->>> hist.lookupCode('6', whichDict='clientcode')
+>>> hist.getTranslation('6', whichDict='clientcode')
 'CLIENT_SIP2'
->>> hist.lookupCode('99', whichDict='clientcode')
+>>> hist.getTranslation('99', whichDict='clientcode')
 '99'
->>> hist.lookupCode('99', whichDict='clientcode')
+>>> hist.getTranslation('99', whichDict='clientcode')
 '99'
->>> hist.lookupCode('S61EVFWSMTCHTLHL1', whichDict='commandcode')
+>>> hist.getTranslation('S61EVFWSMTCHTLHL1', whichDict='commandcode')
 'Discharge Item'
->>> hist.lookupCode('NQ31221120423970')
+>>> hist.getTranslation('NQ31221120423970')
 'item_id'
->>> hist.lookupCode('NQ31221120423970', asValue=True)
+>>> hist.getTranslation('NQ31221120423970', asValue=True)
 '31221120423970'
->>> hist.lookupCode('zZ12345678')
+>>> hist.getTranslation('zZ12345678')
 'zZ'
 
 
@@ -182,3 +184,9 @@ bar_codes read  :10
 >>> data = 'E202304110006462936R ^S18IYFWCLOUDLIBRARY^FEEPLMNA^FFSIPCHK^FcNONE^FDSIPCHK^dC6^UO21221029670244^UK4/11/2023^OAY^^O'.split('^')
 >>> print(hist.convertLogEntry(data, 4))
 (0, {'timestamp': '2023-04-11 00:06:46', 'command_code': 'Edit User Part B', 'station_library': 'MNA', 'station_login_user_access': 'SIPCHK', 'station_login_clearance': 'NONE', 'station': 'SIPCHK', 'client_type': 'CLIENT_SLAPPER', 'user_id': '21221029670244', 'user_last_activity': '2023-04-11', 'user_edit_override': 'Y'})
+
+Test that birth_year gets converted
+-----------------------------------
+>>> data = 'E202304122237183071R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767^uFLinda^uLSpeer^uUSPEER , LINDA^uV0^UMEPLMNA^PEEPL_ADULT^P5ECONSENT^0D5:ECONSENT^UZ4/5/1971^UD4/12/2023^IbENGLISH^P7CIRCRULE^jlY^^O00179'.split('^')
+>>> print(hist.convertLogEntry(data, 4))
+(0, {'timestamp': '2023-04-12 22:37:18', 'command_code': 'Create User Part B', 'station_login_environment': 'ADMIN', 'station_library': 'MNA', 'user_id': '21221900070767', 'data_code_uF': 'Linda', 'data_code_uL': 'Speer', 'data_code_uU': 'SPEER , LINDA', 'data_code_uV': '0', 'user_library': 'MNA', 'user_profile_name': 'EPL_ADULT', 'user_category_5': 'ECONSENT', 'list_of_user_categories': '5:ECONSENT', 'birth_year': '1971-04-05', 'date_privilege_granted': '2023-04-12', 'language': 'ENGLISH', 'data_code_P7': 'CIRCRULE', 'data_code_jl': 'Y'})
