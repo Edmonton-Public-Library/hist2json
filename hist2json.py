@@ -24,6 +24,7 @@ import sys
 import getopt
 import re
 from os import path
+from pathlib import Path
 from os.path import exists
 import json
 import gzip
@@ -47,13 +48,13 @@ import subprocess
 # E202301180001403066R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLWHP^UO21221027661047^UfIlovebigb00ks^NQ31221108836540^HB01/18/2024^HKTITLE^HOEPLLHL^dC5^^O00121
 # 
 # Added hostname detection for data and cmd code files.
-VERSION = "3.00.01"
+VERSION = "3.01.00"
 # When reading data codes and command codes, assume the default location on the ILS,
 # otherwise the datacode and cmdcode file in lib is used. This is done for testing
 # purposes.
 APP    = 'h2j'
 # A replacement date Symphony's deep time 'NEVER' which won't do as a timestamp.
-NEVER  = '2099-01-01'
+NEVER  = '2099-12-31'
 EARLIEST_DATE  = '1900-01-01'
 HOME   = '/software/EDPL/Unicorn'
 
@@ -239,8 +240,9 @@ class Hist:
     # param: fields:list data from a log file entry split into 
     #   commnad code and data codes. 
     def inDateRange(self, fields:list, start:str=None, end:str=None, debug:bool=False) -> bool:
-        if not fields:
-            return False
+        # Short circuit process if just doing the whole file.
+        if self.is_started and not start and not end:
+            return True
         # Convert strings to datetime objects
         timestamp = fields[0][1:14]
         if start and len(start) >= len('yyyymmdd'):
@@ -446,6 +448,25 @@ class Hist:
                 return "1900-01-01"
             return '-'.join(new_date)
 
+    # Gets the json version of the file name. Fore example:
+    # files like 202311.hist.Z and 20231112.hist get the names
+    # 202311.json and 20231112.json respectively. Files that 
+    # don't end in '.Z' or '.hist' have '.json' appended to 
+    # their name.
+    # param: histFile:str name of the hist file which may include the path, 
+    #   since only the extension is modified. 
+    def getJsonFileName(self, histFile:str) -> str:
+        json_file_filename = histFile
+        extension = Path(json_file_filename).suffix
+        if extension.endswith('.Z'):
+            json_file_filename = Path(json_file_filename).with_suffix('')
+        extension = Path(json_file_filename).suffix
+        if extension.endswith('.hist'):
+            json_file_filename = Path(json_file_filename).with_suffix('')
+        # This stops creating hidden files on Unix if no name is provided.
+        if not json_file_filename:
+            return 'json'
+        return f"{json_file_filename}.json"
 
 def usage():
     usage_text = f"""
@@ -547,7 +568,8 @@ def main(argv):
     hist.updateDataCodes(dataCodes=data_code_extras)
     # Convert hist file to JSON
     for hist_file in hist_files:
-        hist.toJson(hist_file, outFile=f"{hist_file}.json", mongoDb=use_mongo_json, start=start, end=end)
+        out_file_name = hist.getJsonFileName(hist_file)
+        hist.toJson(hist_file, outFile=out_file_name, mongoDb=use_mongo_json, start=start, end=end)
     # Output report.
     print(f"Total cmd codes read:    {hist.getCommandCodeCount()}\nTotal data codes read:   {hist.getDataCodeCount()}\nTotal history records:   {hist.getLineCount()}")
     print(f"Total items read:     {hist.getBarCodeCount()}")

@@ -2,8 +2,10 @@
 **Files `holdclients`, `datacode`, and `cmdcode` must have a newline on the last line.**
 
 # Changes
-* Birth year of customers are converted into standard yyyy-mm-dd formate.
-* The file `hist_prod.tst` has been removed.
+* Birth year of customers are converted into standard `yyyy-mm-dd` format.
+* The file `hist_prod.tst` has been removed, the standard `hist.tst` file is used instead when `hist2json.py` is run without arguments. Example: `python3 hist2json.py`.
+* The Symphony date `NEVER` is converted into `2099-12-31` instead of `2040-01-01` as in previous versions.
+* Json file naming bug fixed. In older versions the script would trim the suffix of the history file and add `.json`. But Symphony has two file extensions for compressed files and one for uncompressed files created today.
 * 
 
 Example of discharge item with and without date.

@@ -187,6 +187,7 @@ bar_codes read  :10
 >>> print(hist.convertLogEntry(data, 4))
 (0, {'timestamp': '2023-04-11 00:06:46', 'command_code': 'Edit User Part B', 'station_library': 'MNA', 'station_login_user_access': 'SIPCHK', 'station_login_clearance': 'NONE', 'station': 'SIPCHK', 'client_type': 'CLIENT_SLAPPER', 'user_id': '21221029670244', 'user_last_activity': '2023-04-11', 'user_edit_override': 'Y'})
 
+
 Test that birth_year gets converted
 -----------------------------------
 >>> data = 'E202304122237183071R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767^uFLinda^uLSpeer^uUSPEER , LINDA^uV0^UMEPLMNA^PEEPL_ADULT^P5ECONSENT^0D5:ECONSENT^UZ4/5/1971^UD4/12/2023^IbENGLISH^P7CIRCRULE^jlY^^O00179'.split('^')
@@ -230,6 +231,7 @@ bar_codes read  :10
     "user_edit_override": "Y"
   }
 ]
+
 
 Test if toJson works with file
 ------------------------------
@@ -279,6 +281,7 @@ Test selection of specific minute in log
   }
 ]
 
+
 Test just end time specified
 ----------------------------
 >>> hist.toJson('test/test01.hist', end='20230411')
@@ -313,6 +316,7 @@ Test just end time specified
   }
 ]
 
+
 >>> hist.toJson('test/test01.hist', start='20230414')
 [
   {
@@ -330,35 +334,50 @@ Test just end time specified
 ]
 >>> hist.toJson('test/test01.hist', outFile='test/test01.hist.json')
 
+
 Test the inDateRange()
 ----------------------
+
 >>> data = 'E202304122237183071R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
 >>> hist.inDateRange(data, '20230412', '20230413')
 True
-
 >>> data = 'E202304122237183071R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
 >>> hist.inDateRange(data, '20230411', '20230413')
 True
 >>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
 >>> hist.inDateRange(data, start='20230414', end='1234')
 True
-
 >>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
 >>> hist.inDateRange(data, start='20230414')
 True
-
 >>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
 >>> hist.inDateRange(data, end='20230413')
 False
-
 >>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
 >>> hist.inDateRange(data, end='20230415')
 True
-
 >>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
 >>> hist.inDateRange(data)
 True
-
 >>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
 >>> hist.inDateRange(data, start='AndrewAndrew')
 True
+
+
+Test that the json file is named correctly
+------------------------------------------
+
+This means that files like 202311.hist.Z and 20231112.hist get the names
+202311.json and 20231112.json respectively.
+>>> hist.getJsonFileName('202311.hist.Z')
+'202311.json'
+>>> hist.getJsonFileName('20231112.hist')
+'20231112.json'
+>>> hist.getJsonFileName('index.php')
+'index.php.json'
+>>> hist.getJsonFileName('index.php.Z')
+'index.php.json'
+>>> hist.getJsonFileName('index')
+'index.json'
+>>> hist.getJsonFileName('')
+'json'
