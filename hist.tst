@@ -15,6 +15,8 @@ cmd_codes len   :533
 data_codes len  :1881
 hold_clients len:23
 bar_codes read  :0
+
+
 >>> print(f"{hist.cmd_codes['AQ']}")
 Activate Location
 >>> print(f"{hist.data_codes['0A']}")
@@ -249,36 +251,36 @@ True
 
 Test selection of specific minute in log
 ----------------------------------------
->>> hist = Hist(barCodes='test/items1.lst', clientCodes='hold_client_table.lst', debug=True)
-encoding        :ISO-8859-1
-cmd_codes len   :533
-data_codes len  :1881
-hold_clients len:23
-bar_codes read  :10
->>> hist.toJson('test/test01.hist', start='202304130002', end='202304130003')
+>>> hist.toJson('test/test01.hist', start='202304120002', end='202304130003')
 [
   {
-    "timestamp": "2023-04-13 00:02:57",
+    "timestamp": "2023-04-12 00:00:02",
     "command_code": "Edit User Part B",
     "station_library": "MNA",
     "station_login_user_access": "SIPCHK",
     "station_login_clearance": "NONE",
     "station": "SIPCHK",
     "client_type": "CLIENT_SIP2",
-    "user_id": "21221005169575",
-    "user_last_activity": "2023-03-23",
+    "user_id": "21221021970238",
+    "user_last_activity": "2023-04-11",
+    "user_edit_override": "Y"
+  },
+  {
+    "timestamp": "2023-04-12 00:00:02",
+    "command_code": "Edit User Part B",
+    "station_library": "MNA",
+    "station_login_user_access": "SIPCHK",
+    "station_login_clearance": "NONE",
+    "station": "SIPCHK",
+    "client_type": "CLIENT_SIP2",
+    "user_id": "21221900064153",
+    "user_last_activity": "2023-04-11",
     "user_edit_override": "Y"
   }
 ]
 
 Test just end time specified
 ----------------------------
->>> hist = Hist(barCodes='test/items1.lst', clientCodes='hold_client_table.lst', debug=True)
-encoding        :ISO-8859-1
-cmd_codes len   :533
-data_codes len  :1881
-hold_clients len:23
-bar_codes read  :10
 >>> hist.toJson('test/test01.hist', end='20230411')
 [
   {
@@ -326,5 +328,37 @@ bar_codes read  :10
     "user_edit_override": "Y"
   }
 ]
-
 >>> hist.toJson('test/test01.hist', outFile='test/test01.hist.json')
+
+Test the inDateRange()
+----------------------
+>>> data = 'E202304122237183071R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
+>>> hist.inDateRange(data, '20230412', '20230413')
+True
+
+>>> data = 'E202304122237183071R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
+>>> hist.inDateRange(data, '20230411', '20230413')
+True
+>>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
+>>> hist.inDateRange(data, start='20230414', end='1234')
+True
+
+>>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
+>>> hist.inDateRange(data, start='20230414')
+True
+
+>>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
+>>> hist.inDateRange(data, end='20230413')
+False
+
+>>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
+>>> hist.inDateRange(data, end='20230415')
+True
+
+>>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
+>>> hist.inDateRange(data)
+True
+
+>>> data = 'E202304140003592977R ^S01JYFFADMIN^FbADMIN^FEEPLMNA^UO21221900070767'.split('^')
+>>> hist.inDateRange(data, start='AndrewAndrew')
+True

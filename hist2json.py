@@ -27,7 +27,6 @@ from os import path
 from os.path import exists
 import json
 import gzip
-from pathlib import Path
 from datetime import datetime
 import subprocess
 
@@ -48,13 +47,14 @@ import subprocess
 # E202301180001403066R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLWHP^UO21221027661047^UfIlovebigb00ks^NQ31221108836540^HB01/18/2024^HKTITLE^HOEPLLHL^dC5^^O00121
 # 
 # Added hostname detection for data and cmd code files.
-VERSION = "3.00.00"
+VERSION = "3.00.01"
 # When reading data codes and command codes, assume the default location on the ILS,
 # otherwise the datacode and cmdcode file in lib is used. This is done for testing
 # purposes.
 APP    = 'h2j'
 # A replacement date Symphony's deep time 'NEVER' which won't do as a timestamp.
 NEVER  = '2099-01-01'
+EARLIEST_DATE  = '1900-01-01'
 HOME   = '/software/EDPL/Unicorn'
 
 class Hist:
@@ -68,8 +68,7 @@ class Hist:
     # param: dataCodes 
     def __init__(self, encoding:str='ISO-8859-1', barCodes:str=None, clientCodes:str=None, debug:bool=False):
         self.is_ils         = exists(HOME)
-        self.start          = None
-        self.end            = None
+        # Used to keep track of date range of log entries.
         self.is_started     = True
         self.line_count     = 0
         self.errors         = 0
@@ -234,21 +233,38 @@ class Hist:
             record['date_of_discharge'] = self.toDate(data[0], justDate=True)
         return (err_count, record)
 
-    def inDateRange(self, fields:list):
+    # Return true if the list of data includes a date within the 
+    # specified range in its first field (field[0]) when the hist 
+    # object was created and False otherwise. 
+    # param: fields:list data from a log file entry split into 
+    #   commnad code and data codes. 
+    def inDateRange(self, fields:list, start:str=None, end:str=None, debug:bool=False) -> bool:
         if not fields:
             return False
-        if self.is_started:
-            if self.end and self.end in fields[0]:
-                self.is_started = False
-                return False
-            else:
-                return True
+        # Convert strings to datetime objects
+        timestamp = fields[0][1:14]
+        if start and len(start) >= len('yyyymmdd'):
+            start = start[0:8]
         else:
-            if self.start and self.start in fields[0]:
-                self.is_started = True
-                return True
-            else:
-                return False
+            if debug:
+                sys.stderr.write(f"*warning replaced borked start date '{start}' with {EARLIEST_DATE.replace('-', '')}\n")
+            start = EARLIEST_DATE.replace('-', '')
+        if end and len(end) >= len('yyyymmdd'):
+            end = end[0:8]
+        else:
+            if debug:
+                sys.stderr.write(f"*warning replaced borked end date '{end}' with {NEVER.replace('-', '')}\n")
+            end = NEVER.replace('-', '')
+        try:
+            timestamp_dt = datetime.strptime(timestamp, '%Y%m%d%H%M%S')
+            start_date_dt = datetime.strptime(start, '%Y%m%d')
+            end_date_dt = datetime.strptime(end, '%Y%m%d')
+            # Check if the timestamp is within the specified range
+            return start_date_dt <= timestamp_dt < end_date_dt
+        except ValueError as ex:
+            if debug:
+                sys.stderr.write(f"**error with start date '{start}' or end date '{end}': {ex}\n")
+            return True
 
     # Converts and writes the JSON hist file contents to file.
     def toJson(self, histFile:str=None, outFile:str=None, mongoDb:bool=False, start:str=None, end:str=None):
@@ -258,16 +274,7 @@ class Hist:
             sys.stderr.write(f"**error, no such file {histFile}.\n")
             sys.exit()
         if start:
-            # Technically someone could enter ANSI date and time.
-            self.start = 'E'+start[0:14]
             self.is_started = False
-        else:
-            # Technically someone could enter ANSI date and time.
-            self.start = None
-            # Turn on parsing for all lines.
-            self.is_started = True
-        if end:
-            self.end = 'E'+end[0:14]
         sys.stderr.write(f"histFile     :{histFile      }\n")
         # test if the file is a zipped history file. They are named '*.Z'.
         is_compressed_hist = True
@@ -286,7 +293,7 @@ class Hist:
         # Process each of the lines.
         for line in f:
             fields = line.strip().split('^')
-            if not self.inDateRange(fields):
+            if not self.inDateRange(fields, start, end):
                 continue
             self.line_count += 1
             (errors, record) = self.convertLogEntry(fields, self.line_count)
@@ -300,11 +307,7 @@ class Hist:
             json.dump(hist_log_list, j, ensure_ascii=False, indent=2)
         if j is not sys.stdout:
             j.close()
-        # Reset these or they remain persistent over the life of the object
-        # which has surprising results in testing.
-        self.start = None
-        self.end   = None
-        # Turn on parsing for all lines.
+        # Turn on parsing for the possible next hist file to be converted.
         self.is_started = True
 
     # Reads and translates the command codes file from the Unicorn directory on the ILS
