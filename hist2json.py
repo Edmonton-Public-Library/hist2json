@@ -24,10 +24,10 @@ import sys
 import getopt
 import re
 from os import path
+from pathlib import Path
 from os.path import exists
 import json
 import gzip
-from pathlib import Path
 from datetime import datetime
 import subprocess
 
@@ -48,13 +48,14 @@ import subprocess
 # E202301180001403066R ^S01JZFFBIBLIOCOMM^FcNONE^FEEPLWHP^UO21221027661047^UfIlovebigb00ks^NQ31221108836540^HB01/18/2024^HKTITLE^HOEPLLHL^dC5^^O00121
 # 
 # Added hostname detection for data and cmd code files.
-VERSION = "2.00.03"
+VERSION = "3.01.00"
 # When reading data codes and command codes, assume the default location on the ILS,
 # otherwise the datacode and cmdcode file in lib is used. This is done for testing
 # purposes.
 APP    = 'h2j'
 # A replacement date Symphony's deep time 'NEVER' which won't do as a timestamp.
-NEVER  = '2099-01-01'
+NEVER  = '2099-12-31'
+EARLIEST_DATE  = '1900-01-01'
 HOME   = '/software/EDPL/Unicorn'
 
 class Hist:
@@ -68,6 +69,8 @@ class Hist:
     # param: dataCodes 
     def __init__(self, encoding:str='ISO-8859-1', barCodes:str=None, clientCodes:str=None, debug:bool=False):
         self.is_ils         = exists(HOME)
+        # Used to keep track of date range of log entries.
+        self.is_started     = True
         self.line_count     = 0
         self.errors         = 0
         self.translate_cmd  = f"{self.gpn('bin')}/translate"
@@ -231,27 +234,59 @@ class Hist:
             record['date_of_discharge'] = self.toDate(data[0], justDate=True)
         return (err_count, record)
 
+    # Return true if the list of data includes a date within the 
+    # specified range in its first field (field[0]) when the hist 
+    # object was created and False otherwise. 
+    # param: fields:list data from a log file entry split into 
+    #   commnad code and data codes. 
+    def inDateRange(self, fields:list, start:str=None, end:str=None, debug:bool=False) -> bool:
+        # Short circuit process if just doing the whole file.
+        if self.is_started and not start and not end:
+            return True
+        # Convert strings to datetime objects
+        timestamp = fields[0][1:14]
+        if start and len(start) >= len('yyyymmdd'):
+            start = start[0:8]
+        else:
+            if debug:
+                sys.stderr.write(f"*warning replaced borked start date '{start}' with {EARLIEST_DATE.replace('-', '')}\n")
+            start = EARLIEST_DATE.replace('-', '')
+        if end and len(end) >= len('yyyymmdd'):
+            end = end[0:8]
+        else:
+            if debug:
+                sys.stderr.write(f"*warning replaced borked end date '{end}' with {NEVER.replace('-', '')}\n")
+            end = NEVER.replace('-', '')
+        try:
+            timestamp_dt = datetime.strptime(timestamp, '%Y%m%d%H%M%S')
+            start_date_dt = datetime.strptime(start, '%Y%m%d')
+            end_date_dt = datetime.strptime(end, '%Y%m%d')
+            # Check if the timestamp is within the specified range
+            return start_date_dt <= timestamp_dt < end_date_dt
+        except ValueError as ex:
+            if debug:
+                sys.stderr.write(f"**error with start date '{start}' or end date '{end}': {ex}\n")
+            return True
+
     # Converts and writes the JSON hist file contents to file.
-    def toJson(self, histFile:str=None, outFile:str=None, mongoDb:bool=False):
+    def toJson(self, histFile:str=None, outFile:str=None, mongoDb:bool=False, start:str=None, end:str=None):
         if not histFile:
             return
         if not path.isfile(histFile):
-            print(f"**error, no such file {histFile}.\n")
+            sys.stderr.write(f"**error, no such file {histFile}.\n")
             sys.exit()
-        print(f"histFile     :{histFile      }")
+        if start:
+            self.is_started = False
+        sys.stderr.write(f"histFile     :{histFile      }\n")
         # test if the file is a zipped history file. They are named '*.Z'.
         is_compressed_hist = True
         if not histFile.endswith('.Z'):
             is_compressed_hist = False
         hist_log_list = []
-        if not outFile:
-            json_file = Path(histFile).with_suffix('')
-            json_file = f"{histFile}.json"
-        else:
-            json_file = outFile
+        json_file = outFile
         ## Process the history log into JSON.
         # Open the json file ready for output.
-        j = open(json_file, mode='wt', encoding=self.encoding)
+        j = open(json_file, mode='wt', encoding=self.encoding) if json_file else sys.stdout
         # History file handle; either gzipped or regular text.
         if is_compressed_hist:
             f = gzip.open(histFile, mode='rt', encoding=self.encoding)
@@ -259,8 +294,10 @@ class Hist:
             f = open(histFile, mode='rt', encoding=self.encoding)
         # Process each of the lines.
         for line in f:
-            self.line_count += 1
             fields = line.strip().split('^')
+            if not self.inDateRange(fields, start, end):
+                continue
+            self.line_count += 1
             (errors, record) = self.convertLogEntry(fields, self.line_count)
             self.errors += errors
             # Append to list if output JSON proper
@@ -270,7 +307,10 @@ class Hist:
                 json.dump(record, j, ensure_ascii=False, indent=2)
         if not mongoDb:
             json.dump(hist_log_list, j, ensure_ascii=False, indent=2)
-        j.close()
+        if j is not sys.stdout:
+            j.close()
+        # Turn on parsing for the possible next hist file to be converted.
+        self.is_started = True
 
     # Reads and translates the command codes file from the Unicorn directory on the ILS
     # but otherwise the ../test directory on this machine. If the translate command is
@@ -408,6 +448,25 @@ class Hist:
                 return "1900-01-01"
             return '-'.join(new_date)
 
+    # Gets the json version of the file name. Fore example:
+    # files like 202311.hist.Z and 20231112.hist get the names
+    # 202311.json and 20231112.json respectively. Files that 
+    # don't end in '.Z' or '.hist' have '.json' appended to 
+    # their name.
+    # param: histFile:str name of the hist file which may include the path, 
+    #   since only the extension is modified. 
+    def getJsonFileName(self, histFile:str) -> str:
+        json_file_filename = histFile
+        extension = Path(json_file_filename).suffix
+        if extension.endswith('.Z'):
+            json_file_filename = Path(json_file_filename).with_suffix('')
+        extension = Path(json_file_filename).suffix
+        if extension.endswith('.hist'):
+            json_file_filename = Path(json_file_filename).with_suffix('')
+        # This stops creating hidden files on Unix if no name is provided.
+        if not json_file_filename:
+            return 'json'
+        return f"{json_file_filename}.json"
 
 def usage():
     usage_text = f"""
@@ -430,6 +489,16 @@ def usage():
     -c --clientCodes="/foo/clients.txt": Path to hold client table
        A version exists in 'test/'.
     -d: Turns on debug information.
+    -D --DateRange=[start,end]: Specify a date range to pull from the hist
+        log file. Start and end dates are yyyymmdd format, but can be extended
+        to hhmmss. Use the minimun number of digits for start end times. For
+        example to convert all the log entries from July 21, 2023 use start 
+        '20230721' and end '20230722' because the last date is not included in 
+        the output. You may also include hours, minutes, and seconds but if 
+        transactions from 9:00PM to 10:00PM are desired, use start '2023072121'
+        and end '2023072122', that is don't include minutes and seconds if 
+        you don't need them. You may use start and or end independantly.
+        If neither start nor end are used, all log entries are converted.
     -H --HistFile="/foo/bar.hist": REQUIRED. Hist log file or files to convert.
         Multiple files can be specified as 'file1,file2, file3, ...'.
     -h: Prints this help message.
@@ -449,13 +518,15 @@ def main(argv):
     hist_files = []
     # Output in proper JSON, not one dict per line as required for MongoDB.
     use_mongo_json = False
-    debug       = False
-    barcodes    = ''
-    clientcodes = ''
-    itemBarcodes       = ''
+    debug          = False
+    barcodes       = ''
+    clientcodes    = ''
+    itemBarcodes   = ''
+    start          = None
+    end            = None
     # Translate command codes and data codes if required, and iff translate available.
     try:
-        opts, args = getopt.getopt(argv, "c:dH:I:mv", ["clientCodes=", "HistFile=", "ItemKeyBarcodes="])
+        opts, args = getopt.getopt(argv, "c:dD:H:I:mv", ["clientCodes=", "DateRange=", "HistFile=", "ItemKeyBarcodes="])
     except getopt.GetoptError:
         usage()
     for opt, arg in opts:
@@ -463,6 +534,10 @@ def main(argv):
             clientcodes = arg
         elif opt in "-d":
             debug = True
+        elif opt in ("-D", "--DateRange"):
+            (s,e) = arg.split(',')
+            start = s.strip()
+            end   = e.strip()
         elif opt in ("-H", "--HistFile"):
             arg_list = arg.split(',')
             for my_arg in arg_list:
@@ -493,7 +568,8 @@ def main(argv):
     hist.updateDataCodes(dataCodes=data_code_extras)
     # Convert hist file to JSON
     for hist_file in hist_files:
-        hist.toJson(hist_file, mongoDb=use_mongo_json)
+        out_file_name = hist.getJsonFileName(hist_file)
+        hist.toJson(hist_file, outFile=out_file_name, mongoDb=use_mongo_json, start=start, end=end)
     # Output report.
     print(f"Total cmd codes read:    {hist.getCommandCodeCount()}\nTotal data codes read:   {hist.getDataCodeCount()}\nTotal history records:   {hist.getLineCount()}")
     print(f"Total items read:     {hist.getBarCodeCount()}")

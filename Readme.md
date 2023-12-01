@@ -1,10 +1,12 @@
 ## Note
 **Files `holdclients`, `datacode`, and `cmdcode` must have a newline on the last line.**
 
-# TODO
-* See if there is a holdclient file and change in code if necessary. **Done**, there doesn't seem to be a holdclient table, but a created one is provided in the `lib/` directory called `holdclient`.
-* Test if `translate` passes text that doesn't need translation without changes. **Done** things that don't need translating are not altered by translate.
-* Fix discharge item that doesn't include date. **Done**
+# Changes
+* Birth year of customers are converted into standard `yyyy-mm-dd` format.
+* The file `hist_prod.tst` has been removed, the standard `hist.tst` file is used instead when `hist2json.py` is run without arguments. Example: `python3 hist2json.py`.
+* The Symphony date `NEVER` is converted into `2099-12-31` instead of `2040-01-01` as in previous versions.
+* Json file naming bug fixed. In older versions the script would trim the suffix of the history file and add `.json`. But Symphony has two file extensions for compressed files and one for uncompressed files created today.
+* 
 
 Example of discharge item with and without date.
 E202310100148422967R ^S61EVFWSMTCHTLHL1^FEEPLLHL^FFSMTCHT^FcNONE^FDSIPCHK^dC6^NQ31221120423970^CO10/10/2023,1:48^^O
@@ -130,8 +132,12 @@ For options [see below](#operation_instructions).
 `-c` `--clientCodes="/foo/clients.txt"`: Path to hold client table
     A version exists in `'test/'`.
 `-d`: Turns on debug information.
-`-H` `--HistFile="/foo/bar.hist"`: REQUIRED. Hist log file or files to convert.
-    Multiple files can be specified as 'file1,file2, file3, ...'.
+`-D` `--DateRange=[start,end]`: Specify a date range to pull from the hist
+    log file. Start and end dates are `yyyymmdd` format, but can be extended
+    to hhmmss. Use the minimun number of digits for start end times. For
+    example to convert all the log entries from July 21, 2023 use start 
+    '`20230721`' and end '`20230722`' because the last date is not included in the output. You may also include hours, minutes, and seconds but if transactions from 9:00PM to 10:00PM are desired, use start '`2023072121`' and end '`2023072122`', that is don't include minutes and seconds if you don't need them. You may use start and or end independantly. If neither start nor end are used, all log entries are converted.
+`-H` `--HistFile="/foo/bar.hist"`: REQUIRED. Hist log file or files to convert. Multiple files can be specified as 'file1,file2, file3, ...'.
 `-h`: Prints this help message.
 `-I` `--ItemKeyBarcodes="/foo/bar/items.lst"`: Optional. Path to the 
     list of all item key / barcodes in `'c_key|call_seq|copy_num|item_id'`
